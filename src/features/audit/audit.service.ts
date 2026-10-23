@@ -8,6 +8,8 @@ import {
   type JsonValue,
 } from '../../generated/frozen/audit.js';
 import type { DatabaseClient } from '../../shared/db/database.js';
+import type { Storage } from '../../shared/storage/storage.js';
+import { toTreeBundle } from './audit.bundle.js';
 import { DomainError } from '../../shared/errors.js';
 import { toChallenge, toReproduction, toSession } from './audit.mapper.js';
 import { auditRepository, type SampleRow, type SessionRow } from './audit.repository.js';
@@ -26,6 +28,8 @@ type AuditDependencies = {
   newId: () => string;
   /** CSPRNG bytes: the salt sealing each close's notes (FR-191). */
   randomBytes: (count: number) => Uint8Array;
+  /** §4: presigned evidence links and the stored video's hash. */
+  storage: Pick<Storage, 'presignGet' | 'sha256Of'>;
 };
 
 const SALT_BYTES = 32;
@@ -245,6 +249,38 @@ const challengeOf =
     }
   };
 
+/** §4, FR-193–FR-196, NFR-053: ownership and the sample first, refusals unlogged; then the access row, committed on
+ *  its own before any evidence is read; then the bundle. Every read, a refetch included, logs again. */
+const treeOf =
+  ({ database, storage, clock }: AuditDependencies) =>
+  async (auditor: Auditor, id: string, treeId: string) => {
+    const repository = auditRepository(database);
+    const session = await repository.session(id, auditor.id);
+    const sample = session === undefined ? undefined : await repository.sampleOf(id, treeId);
+
+    if (session === undefined || sample === undefined) {
+      throw new DomainError('not_found');
+    }
+
+    await repository.logAccess(id, auditor.id, `tree:${treeId}`);
+
+    const tree = await repository.bundleTree(treeId);
+    const [submissions, events, payouts, forfeited, challenges, open] = await Promise.all([
+      repository.bundleSubmissions(tree),
+      repository.events(treeId),
+      repository.payouts(treeId),
+      repository.forfeitedMilestones(treeId),
+      repository.challenges(id),
+      repository.openChallenge(treeId),
+    ]);
+
+    return toTreeBundle(
+      storage,
+      { session, sample, tree, submissions, events, payouts, forfeited, challenges, open },
+      clock(),
+    );
+  };
+
 /** docs/BE/features/audit.md: an auditor's sessions, each a frozen, reproducible sample of one campaign's trees. */
 export const createAuditService = (dependencies: AuditDependencies) => {
   const repository = auditRepository(dependencies.database);
@@ -252,6 +288,7 @@ export const createAuditService = (dependencies: AuditDependencies) => {
   const record = recordOf(dependencies);
   const close = closeOf(dependencies);
   const challenge = challengeOf(dependencies);
+  const tree = treeOf(dependencies);
 
   /** The caller's own session; anyone else's answers as unknown (ADR-008, REG-005). */
   const ownSession = async (auditor: Auditor, id: string): Promise<SessionRow> => {
@@ -281,6 +318,7 @@ export const createAuditService = (dependencies: AuditDependencies) => {
     session: sessionOf,
     record,
     challenge,
+    tree,
 
     close: async (auditor: Auditor, id: string, summary: string) => {
       const built = await close(auditor, id, summary);
@@ -323,4 +361,22 @@ export const createAuditService = (dependencies: AuditDependencies) => {
     /** §8: the stored report with the private notes, for the owner only. */
     report: async (auditor: Auditor, id: string) => storedReport(await ownSession(auditor, id)),
   };
+};
+
+/** evidence §4 (REG-005, DN-8): an auditor reads a submission only when one of their sessions sampled its tree, and
+ *  the read is logged against that session before the body is built. False for anyone else. */
+export const auditorRead = async (
+  database: DatabaseClient,
+  { auditorId, treeId, resource }: { auditorId: string; treeId: string | null; resource: string },
+): Promise<boolean> => {
+  const repository = auditRepository(database);
+  const session = treeId === null ? undefined : await repository.samplingSession(auditorId, treeId);
+
+  if (session === undefined) {
+    return false;
+  }
+
+  await repository.logAccess(session, auditorId, resource);
+
+  return true;
 };

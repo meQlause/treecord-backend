@@ -1,3 +1,4 @@
+import { aiOf } from '../../shared/ai-scores.js';
 import { CHECK_IN_RADIUS_M, MILESTONE_DUE_UNITS } from '../../generated/frozen/constants.js';
 import type { DetailRow, HeldRow, SlotTarget, TreeTarget } from './evidence.repository.js';
 import { reasonsOf, targetChecks, type TargetFacts } from './prechecks/prechecks.rules.js';
@@ -141,42 +142,6 @@ export const pipelineOf = ({
   return status === 'failed' && attestation !== null
     ? { step: 4, failedAt: 'attested' }
     : { step: 3, failedAt: 'scored' };
-};
-
-type Raw = Record<string, unknown> | null | undefined;
-
-/** The named keys of an object, each null when absent: nothing else passes through. */
-const pick = (raw: Raw, keys: readonly string[]) =>
-  Object.fromEntries(keys.map((key) => [key, raw?.[key] ?? null]));
-
-/** FR-116, FR-155: the AI's scores by known keys only; the raw response (its keyframe URLs, notes) never leaves. */
-const aiOf = (response: unknown) => {
-  if (response === null || response === undefined) {
-    return null;
-  }
-
-  const { modelVersion, scores } = response as {
-    modelVersion?: string;
-    scores?: Record<string, Raw>;
-  };
-  const raw: Record<string, Raw> = scores ?? {};
-
-  return {
-    modelVersion: modelVersion ?? null,
-    scores: {
-      ...pick(raw as Raw, [
-        'liveness',
-        'recapture',
-        'treePresence',
-        'speciesMatch',
-        'growthConsistency',
-      ]),
-      duplicate: pick(raw['duplicate'], ['maxSimilarity', 'matchedSubmissionId']),
-      ...pick(raw as Raw, ['challengeVisible']),
-      ndvi: raw['ndvi'] ? pick(raw['ndvi'], ['value', 'source']) : null,
-      ...pick(raw as Raw, ['tagDecoded']),
-    },
-  };
 };
 
 /** FR-116, FR-156: the reviewer's decision once one exists. */

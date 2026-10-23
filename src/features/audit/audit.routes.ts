@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { pathParam } from '../../shared/http/params.js';
+import { pathParam, treeIdParam } from '../../shared/http/params.js';
 import { allowRoles } from '../../shared/http/roles.js';
 import { validate } from '../../shared/http/validate.js';
 import {
@@ -36,6 +36,15 @@ export const auditRouter = (audit: AuditService): Router =>
     .get('/audit/sessions/:id', async (req, res) => {
       res.json(
         await audit.session(res.locals['profile'] as Auditor, pathParam(z.uuid(), req.params.id)),
+      );
+    })
+    .get('/audit/sessions/:id/trees/:treeId', async (req, res) => {
+      res.json(
+        await audit.tree(
+          res.locals['profile'] as Auditor,
+          pathParam(z.uuid(), req.params.id),
+          pathParam(treeIdParam, req.params.treeId),
+        ),
       );
     })
     .post('/audit/sessions/:id/findings', validate(findingSchema), async (req, res) => {

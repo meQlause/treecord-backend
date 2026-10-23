@@ -54,6 +54,13 @@ describe('opening a session', () => {
     }>`select id from public.profiles where privy_user_id = ${NADIA}`.execute(test.database);
     const audit = createAuditService({
       database: test.database,
+      // no evidence is read here
+      storage: {
+        presignGet: async () => {
+          throw new Error('no storage in this test');
+        },
+        sha256Of: async () => null,
+      },
       latestBlock: async () => DEMO_AUDIT_BLOCK,
       clock: () => ISSUED_AT,
       randomBytes: (count) => new Uint8Array(count),

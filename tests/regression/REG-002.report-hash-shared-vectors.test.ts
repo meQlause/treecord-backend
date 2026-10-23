@@ -56,6 +56,13 @@ describe('REG-002: one report hash for server and browser', () => {
     let now = new Date('2026-10-21T05:00:00.000Z');
     const audit = createAuditService({
       database: test.database,
+      // no evidence is read here
+      storage: {
+        presignGet: async () => {
+          throw new Error('no storage in this test');
+        },
+        sha256Of: async () => null,
+      },
       latestBlock: async () => DEMO_BLOCK,
       clock: () => now,
       newId: () => DEMO_CLOSED,

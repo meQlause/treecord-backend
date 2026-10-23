@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseClient } from '../../shared/db/database.js';
 import { DomainError } from '../../shared/errors.js';
 import type { Storage } from '../../shared/storage/storage.js';
+import { auditorRead } from '../audit/index.js';
 import { issueSlotTags } from '../planter/index.js';
 import {
   loadPlanting,
@@ -207,15 +208,29 @@ const KEYFRAMES_BUCKET = 'keyframes';
 // ADR-020: the keyframe links live as long as every other link the API hands out
 const LINK_MS = 900_000;
 
-/** §4: the owner and operators read a submission; for anyone else it does not exist (ADR-008). The sampling
- *  auditor's access (REG-005) comes with the audit feature, which owns its access log. */
+/** §4: the owner, operators, and an auditor whose session sampled the tree (logged through audit first, REG-005);
+ *  for anyone else it does not exist (ADR-008). */
+const mayRead = async (
+  database: Services['database'],
+  caller: { id: string; role: string },
+  row: { id: string; profile_id: string; tree_id: string | null },
+): Promise<boolean> =>
+  row.profile_id === caller.id ||
+  caller.role === 'operator' ||
+  (caller.role === 'auditor' &&
+    (await auditorRead(database, {
+      auditorId: caller.id,
+      treeId: row.tree_id,
+      resource: `submission:${row.id}`,
+    })));
+
 const detailOf =
-  ({ repository, storage, now }: Services) =>
+  ({ database, repository, storage, now }: Services) =>
   async (caller: { id: string; role: string }, submissionId: string) => {
     const row = await repository.detail(submissionId);
     const operator = caller.role === 'operator';
 
-    if (row === undefined || (row.profile_id !== caller.id && !operator)) {
+    if (row === undefined || !(await mayRead(database, caller, row))) {
       throw new DomainError('not_found');
     }
 

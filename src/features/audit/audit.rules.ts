@@ -1,4 +1,5 @@
 import { AUDIT_SAMPLE_ALGORITHM, reportHash } from '../../generated/frozen/audit.js';
+import { MILESTONE_DUE_UNITS } from '../../generated/frozen/constants.js';
 
 // docs/BE/features/audit.md §7, §10, FR-190–FR-192: the closed report, built from what the session froze. Pure: every
 // instant arrives as an ISO string, the salt as hex.
@@ -134,4 +135,16 @@ export const challengeRefusal = ({
   return treeStatus === 'alive'
     ? null
     : { code: 'tree_not_alive', details: { status: treeStatus } };
+};
+
+const LAST_MONTH = Math.max(...MILESTONE_DUE_UNITS);
+
+/** §4, FR-196: "Milestones paid 2/6" and the month of the lowest milestone neither paid nor forfeited; the last month
+ *  once all six are settled. */
+export const progressOf = (paid: number[], forfeited: number[]) => {
+  const open = MILESTONE_DUE_UNITS.map((month, milestone) => ({ month, milestone })).find(
+    ({ milestone }) => !paid.includes(milestone) && !forfeited.includes(milestone),
+  );
+
+  return { milestonesPaid: paid.length, month: open === undefined ? LAST_MONTH : open.month };
 };

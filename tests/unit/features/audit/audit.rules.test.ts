@@ -3,6 +3,7 @@ import {
   buildReport,
   challengeRefusal,
   missingFindings,
+  progressOf,
   totalsOf,
   type SampleFacts,
 } from '../../../../src/features/audit/audit.rules.js';
@@ -112,5 +113,21 @@ describe('challengeRefusal', () => {
     [{ treeStatus: 'dead' }, { code: 'tree_not_alive', details: { status: 'dead' } }],
   ])('%o answers %o', (change, refusal) => {
     expect(challengeRefusal({ ...SAMPLED_ALIVE, ...change })).toEqual(refusal);
+  });
+});
+
+// §4, FR-196.
+describe('progressOf', () => {
+  it.each([
+    ['two paid: month 6', [0, 1], [], { milestonesPaid: 2, month: 6 }],
+    [
+      'month 3 forfeited, nothing paid after planting: month 6',
+      [0],
+      [1],
+      { milestonesPaid: 1, month: 6 },
+    ],
+    ['all six settled: the last month', [0, 1, 2, 3, 4], [5], { milestonesPaid: 5, month: 36 }],
+  ])('%s', (_case, paid, forfeited, progress) => {
+    expect(progressOf(paid, forfeited)).toEqual(progress);
   });
 });

@@ -149,6 +149,10 @@ export const matrixProbes = (
         path: `${await reviewedSessionOf(context, owner)}/${action}`,
         body,
       }),
+    treeReadOf: async (owner: Owner): Promise<Probe> => ({
+      method: 'get',
+      path: `${await reviewedSessionOf(context, owner)}/trees/${TREE_ID}`,
+    }),
     reportOf: async (owner: Owner): Promise<Probe> => ({
       method: 'get',
       path: `${await reviewedSessionOf(context, owner)}/report`,

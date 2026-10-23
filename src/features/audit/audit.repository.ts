@@ -1,8 +1,12 @@
 import { sql, type Kysely } from 'kysely';
 import type { DB } from '../../generated/db.js';
 
-// a session's campaign, joined and selected by both session reads
+// the aliased tables and columns several reads share
+const SESSIONS = 'audit_sessions as s';
 const SESSION_CAMPAIGN = 's.campaign_address';
+const SESSION_AUDITOR = 's.auditor_profile_id';
+const SAMPLES = 'audit_samples as a';
+const SAMPLE_SESSION = 'a.session_id';
 
 type NewSession = {
   id: string;
@@ -69,7 +73,7 @@ const openWrites = (database: Kysely<DB>) => ({
 const sessionReads = (database: Kysely<DB>) => ({
   session: (id: string, auditorId: string) =>
     database
-      .selectFrom('audit_sessions as s')
+      .selectFrom(SESSIONS)
       .innerJoin('campaigns as c', 'c.address', SESSION_CAMPAIGN)
       .select([
         's.id',
@@ -85,17 +89,17 @@ const sessionReads = (database: Kysely<DB>) => ({
         's.report_hash',
         's.report',
         's.report_notes',
-        's.auditor_profile_id',
+        SESSION_AUDITOR,
         's.created_at',
         's.closed_at',
       ])
       .where('s.id', '=', id)
-      .where('s.auditor_profile_id', '=', auditorId)
+      .where(SESSION_AUDITOR, '=', auditorId)
       .executeTakeFirst(),
 
   samples: (id: string) =>
     database
-      .selectFrom('audit_samples as a')
+      .selectFrom(SAMPLES)
       .innerJoin('trees as t', 't.tree_id', 'a.tree_id')
       .select([
         'a.position',
@@ -105,7 +109,7 @@ const sessionReads = (database: Kysely<DB>) => ({
         'a.notes',
         'a.recorded_at',
       ])
-      .where('a.session_id', '=', id)
+      .where(SAMPLE_SESSION, '=', id)
       .orderBy('a.position')
       .execute(),
 
@@ -213,8 +217,8 @@ const challengeWrites = (database: Kysely<DB>) => ({
   challengeTarget: (id: string, treeId: string) =>
     database
       .selectFrom('trees as t')
-      .leftJoin('audit_samples as a', (join) =>
-        join.onRef('a.tree_id', '=', 't.tree_id').on('a.session_id', '=', id),
+      .leftJoin(SAMPLES, (join) =>
+        join.onRef('a.tree_id', '=', 't.tree_id').on(SAMPLE_SESSION, '=', id),
       )
       .select(['t.status', sql<boolean>`a.session_id is not null`.as('sampled')])
       .where('t.tree_id', '=', treeId)
@@ -224,7 +228,7 @@ const challengeWrites = (database: Kysely<DB>) => ({
   openChallenge: (treeId: string) =>
     database
       .selectFrom('challenges')
-      .select(['id', 'expires_at'])
+      .select(['id', 'code', 'created_at', 'expires_at'])
       .where('tree_id', '=', treeId)
       .where('fulfilled_submission_id', 'is', null)
       .where('expires_at', '>', sql<Date>`now()`)
@@ -262,7 +266,7 @@ const challengeWrites = (database: Kysely<DB>) => ({
 const reproductionReads = (database: Kysely<DB>) => ({
   publicSession: (id: string) =>
     database
-      .selectFrom('audit_sessions as s')
+      .selectFrom(SESSIONS)
       .innerJoin('campaigns as c', 'c.address', SESSION_CAMPAIGN)
       .select([
         's.id',
@@ -283,15 +287,146 @@ const reproductionReads = (database: Kysely<DB>) => ({
       .executeTakeFirst(),
 });
 
+/** NFR-053, FR-193, DN-8: who may read sampled evidence, and the log of each read. */
+const accessWrites = (database: Kysely<DB>) => ({
+  /** The auditor's own session that sampled the tree, whatever its status; the oldest when several did. */
+  samplingSession: async (auditorId: string, treeId: string): Promise<string | undefined> =>
+    (
+      await database
+        .selectFrom(SESSIONS)
+        .innerJoin(SAMPLES, SAMPLE_SESSION, 's.id')
+        .select('s.id')
+        .where(SESSION_AUDITOR, '=', auditorId)
+        .where('a.tree_id', '=', treeId)
+        .orderBy('s.created_at')
+        .limit(1)
+        .executeTakeFirst()
+    )?.id,
+
+  /** One row per read, committed on its own before any evidence is read. */
+  logAccess: async (sessionId: string, auditorId: string, resource: string): Promise<void> => {
+    await database
+      .insertInto('audit_access_log')
+      .values({ session_id: sessionId, auditor_profile_id: auditorId, resource })
+      .execute();
+  },
+});
+
+/** §4: one sampled tree's evidence, as S25 shows it. */
+const bundleReads = (database: Kysely<DB>) => ({
+  sampleOf: (id: string, treeId: string) =>
+    database
+      .selectFrom('audit_samples')
+      .select(['position', 'finding', 'notes', 'recorded_at'])
+      .where('session_id', '=', id)
+      .where('tree_id', '=', treeId)
+      .executeTakeFirst(),
+
+  bundleTree: (treeId: string) =>
+    database
+      .selectFrom('trees')
+      .select([
+        sql<string>`tree_id::text`.as('tree_id'),
+        'status',
+        'campaign_address',
+        'slot_id',
+        'planter_address',
+        'exact_lat',
+        'exact_lon',
+        'replant_deadline',
+      ])
+      .where('tree_id', '=', treeId)
+      .executeTakeFirstOrThrow(),
+
+  /** The tree's submissions, its planting found by slot, oldest first: one tree, never paginated. */
+  bundleSubmissions: (tree: { tree_id: string; campaign_address: string; slot_id: number }) =>
+    database
+      .selectFrom('submissions as sub')
+      .leftJoin('devices as d', 'd.id', 'sub.device_id')
+      .select([
+        'sub.id',
+        'sub.kind',
+        'sub.milestone',
+        'sub.status',
+        'sub.created_at',
+        'sub.video_path',
+        'sub.video_sha256',
+        'sub.size_bytes',
+        sql<number | null>`sub.duration_sec::float8`.as('duration_sec'),
+        'sub.keyframe_paths',
+        'sub.payload',
+        'sub.canonical',
+        'sub.signature',
+        'sub.evidence_hash',
+        'sub.precheck_results',
+        'sub.ai_response',
+        'sub.policy_decision',
+        'sub.policy_score',
+        'sub.reject_reasons',
+        'sub.review_note',
+        'sub.reviewed_at',
+        'sub.attestation',
+        'sub.tx_hash',
+        'd.id as device_id',
+        'd.thumbprint',
+        'd.revoked_at',
+        'd.public_key_jwk',
+      ])
+      .where((where) =>
+        where.or([
+          where('sub.tree_id', '=', tree.tree_id),
+          where.and([
+            where('sub.kind', '=', 'PLANTED'),
+            where('sub.campaign_address', '=', tree.campaign_address),
+            where('sub.slot_id', '=', tree.slot_id),
+          ]),
+        ]),
+      )
+      .orderBy('sub.created_at')
+      .execute(),
+});
+
+/** §4: the tree's chain records. */
+const recordReads = (database: Kysely<DB>) => ({
+  events: (treeId: string) =>
+    database
+      .selectFrom('tree_events')
+      .select(['kind', sql<string>`block_number::text`.as('block'), 'block_time', 'tx_hash'])
+      .where('tree_id', '=', treeId)
+      .orderBy('block_number')
+      .orderBy('log_index')
+      .execute(),
+
+  payouts: (treeId: string) =>
+    database
+      .selectFrom('milestone_payouts')
+      .select(['milestone', sql<string>`amount::text`.as('amount'), 'tx_hash'])
+      .where('tree_id', '=', treeId)
+      .orderBy('milestone')
+      .execute(),
+
+  forfeitedMilestones: async (treeId: string): Promise<number[]> =>
+    (
+      await database
+        .selectFrom('milestone_forfeits')
+        .select('milestone')
+        .where('tree_id', '=', treeId)
+        .execute()
+    ).map((row) => row.milestone),
+});
+
 export const auditRepository = (database: Kysely<DB>) => ({
   ...openWrites(database),
+  ...bundleReads(database),
+  ...recordReads(database),
+  ...accessWrites(database),
   ...reproductionReads(database),
   ...challengeWrites(database),
   ...recordWrites(database),
   ...sessionReads(database),
 });
 
-type AuditRepository = ReturnType<typeof auditRepository>;
+export type AuditRepository = ReturnType<typeof auditRepository>;
 
 type Rows<Read extends keyof AuditRepository> = Awaited<ReturnType<AuditRepository[Read]>>;
 
@@ -300,3 +435,5 @@ export type SessionRow = NonNullable<Rows<'session'>>;
 export type SampleRow = Rows<'samples'>[number];
 
 export type ChallengeRow = Rows<'challenges'>[number];
+
+export type BundleSubmissionRow = Rows<'bundleSubmissions'>[number];

@@ -341,6 +341,12 @@ const MATRIX: AccessMatrix = {
     }),
     ok: 200,
   },
+  'GET /audit/sessions/:id/trees/:treeId': {
+    allowed: ['auditor'],
+    probe: probes.treeReadOf,
+    ok: 200,
+    foreign: () => probes.treeReadOf('other'),
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
