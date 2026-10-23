@@ -21,7 +21,7 @@
     "check:frozen": "node scripts/check-frozen.ts",
     "db:migrate": "tsx --env-file=.env scripts/migrate.ts",
     "db:codegen": "kysely-codegen --env-file .env --dialect postgres --include-pattern \"public.*\" --exclude-pattern \"public.kysely_*\" --out-file src/generated/db.ts",
-    "test:coverage": "vitest run tests/unit --coverage"
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1156.0",
