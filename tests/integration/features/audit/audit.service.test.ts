@@ -12,6 +12,7 @@ import {
 import { fakePrivy, type FakePrivy } from '../../../helpers/fake-privy.js';
 import { auditDemo, BARE, NADIA, OMAR, POPULATION } from '../../../fixtures/audit-demo.js';
 import { RAKA, ROOTS } from '../../../fixtures/roots-that-stay.js';
+import { reportHash } from '../../../../src/generated/frozen/audit.js';
 
 const DEMO_AUDIT = 'e9219997-5281-4602-b694-f3c4b08cf7c3';
 const DEMO_SEED = '0x09c2dea7c3ba4fc471025dabff6ef8967bbe0efb0c99a832da02e3e8f0d75778';
@@ -55,6 +56,7 @@ describe('opening a session', () => {
       database: test.database,
       latestBlock: async () => DEMO_AUDIT_BLOCK,
       clock: () => ISSUED_AT,
+      randomBytes: (count) => new Uint8Array(count),
       // FR-184: the id is lowercased before it seeds anything
       newId: () => DEMO_AUDIT.toUpperCase(),
     });
@@ -184,5 +186,132 @@ describe('reading a session', () => {
     expect((await read(id, OMAR)).body.error.code).toBe('not_found');
     expect((await read(id, RAKA)).body.error.code).toBe('forbidden_role');
     expect((await read('e9219997', NADIA)).body.error.code).toBe('invalid_path');
+  });
+});
+
+// §5, §7, §8, FR-190–FR-192, DN-4: findings, the close into a hashed report with sealed notes, and the report read.
+let id = '';
+let sample: string[] = [];
+
+const post = async (path: string, body: object, userId = NADIA) =>
+  request(api.app)
+    .post(`/api/v1/audit/sessions/${id}/${path}`)
+    .set(await api.signedIn(userId))
+    .send(body);
+
+const stored = async () => {
+  const [row] = (
+    await sql<{
+      status: string;
+      closed_at: Date | null;
+      report: Parameters<typeof reportHash>[0];
+      report_hash: string | null;
+      report_notes: Parameters<typeof reportHash>[0] & { salt: string; summary: string };
+    }>`select status, closed_at, report, report_hash, report_notes from public.audit_sessions
+      where id = ${id}`.execute(test.database)
+  ).rows;
+
+  if (row === undefined) {
+    throw new Error(`no session ${id}`);
+  }
+
+  return row;
+};
+
+describe('recording findings', () => {
+  beforeAll(async () => {
+    const opened = await open({ campaign: ROOTS, sampleSize: 3 });
+
+    id = opened.body.id as string;
+    sample = opened.body.samples.map(({ treeId }: { treeId: string }) => treeId);
+  });
+
+  it('records a finding with its notes trimmed; blank notes are none; a tree outside the sample is 404', async () => {
+    const first = await post('findings', {
+      treeId: sample[0],
+      finding: 'needs_followup',
+      notes: '  Flag remains open.  ',
+    });
+    const second = await post('findings', { treeId: sample[1], finding: 'ok', notes: '   ' });
+    const outside = POPULATION.find((treeId) => !sample.includes(treeId));
+
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({
+      position: 0,
+      treeId: sample[0],
+      finding: 'needs_followup',
+      notes: 'Flag remains open.',
+      recordedAt: expect.any(String),
+    });
+    expect(second.body.notes).toBeNull();
+    expect((await post('findings', { treeId: outside, finding: 'ok' })).body.error.code).toBe(
+      'not_found',
+    );
+    expect(
+      (
+        await post('findings', {
+          treeId: sample[0],
+          finding: 'ok',
+          recordedAt: '2026-10-21T04:00:00Z',
+        })
+      ).status,
+    ).toBe(400);
+  });
+});
+
+describe('closing a session', () => {
+  it('a close with a tree still missing its finding answers 409 findings_incomplete naming it; nothing changes', async () => {
+    const response = await post('close', {});
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatchObject({
+      code: 'findings_incomplete',
+      details: { missing: [sample[2]] },
+    });
+    expect((await stored()).status).toBe('open');
+  });
+
+  it('closes into the report whose stored hash re-hashes, with the notes sealed by a fresh 32-byte salt', async () => {
+    await post('findings', { treeId: sample[2], finding: 'issue' });
+
+    const response = await post('close', { summary: ' Sample reviewed. ' });
+    const row = await stored();
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      sessionId: id,
+      status: 'closed',
+      reportHash: row.report_hash,
+    });
+    expect(response.body.report.totals).toEqual({ ok: 1, issue: 1, needsFollowup: 1 });
+    expect(reportHash(row.report)).toBe(row.report_hash);
+    expect(response.body.report.notesHash).toBe(reportHash(row.report_notes));
+    expect(row.report_notes).toMatchObject({
+      salt: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      summary: 'Sample reviewed.',
+    });
+    expect(response.body.report.closedAt).toBe(row.closed_at?.toISOString());
+    expect(JSON.stringify(response.body.report)).not.toContain('Flag remains open.');
+  });
+
+  it('a repeat close answers the stored report with idempotent; its summary is ignored', async () => {
+    const first = await request(api.app)
+      .get(`/api/v1/audit/sessions/${id}/report`)
+      .set(await api.signedIn(NADIA));
+    const again = await post('close', { summary: 'Another summary' });
+
+    expect(again.body).toEqual({ ...first.body, idempotent: true });
+    expect(again.body.notes.summary).toBe('Sample reviewed.');
+  });
+
+  it("every later write answers session_closed; the report stays the owner's", async () => {
+    const write = await post('findings', { treeId: sample[0], finding: 'ok' });
+    const foreign = await request(api.app)
+      .get(`/api/v1/audit/sessions/${id}/report`)
+      .set(await api.signedIn(OMAR));
+
+    expect(write.status).toBe(409);
+    expect(write.body.error.code).toBe('session_closed');
+    expect(foreign.body.error.code).toBe('not_found');
   });
 });

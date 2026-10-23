@@ -1,6 +1,3 @@
-import { calculateJwkThumbprint } from 'jose';
-import { sql } from 'kysely';
-import { generateKeyPairSync } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
@@ -12,6 +9,7 @@ import {
   type Role,
 } from '../helpers/access-matrix.js';
 import { testApi, type TestApi } from '../helpers/api.js';
+import { matrixProbes } from '../helpers/matrix-probes.js';
 import {
   CONTAINER_START_MS,
   startMigratedDatabase,
@@ -20,7 +18,6 @@ import {
 import { fakePrivy } from '../helpers/fake-privy.js';
 import {
   CAMPAIGN,
-  ISSUED_TX,
   matrixWorld,
   METADATA_ID,
   OPEN_FLAG_ID,
@@ -29,7 +26,7 @@ import {
   PLANTING_CAMPAIGN,
   roleWallet,
 } from '../fixtures/matrix.js';
-import { aJob, aProfile, CAMPAIGN as TREE_CAMPAIGN, TREE_ID } from '../fixtures/mirror.js';
+import { aProfile, CAMPAIGN as TREE_CAMPAIGN, TREE_ID } from '../fixtures/mirror.js';
 
 const userOf = (role: Role): string => `did:privy:cm2matrix${role}000000000`;
 const OTHER_USER = 'did:privy:cm2matrixother0000000000';
@@ -39,110 +36,7 @@ let api: TestApi;
 // Profile ids by role, and one more user who owns the foreign records.
 const profileOf = new Map<Role | 'other', string>();
 
-// a fresh public P-256 key, as a browser registers it
-const publicKey = () => {
-  const { kty, crv, x, y } = generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({
-    format: 'jwk',
-  });
-
-  return { kty, crv, x, y } as { kty: string; crv: string; x: string; y: string };
-};
-
-const deviceOf = async (owner: Role | 'other'): Promise<Probe> => {
-  const key = publicKey();
-  const [device] = (
-    await sql<{
-      id: string;
-    }>`insert into public.devices (profile_id, public_key_jwk, thumbprint, label)
-      values (${profileOf.get(owner)}, ${JSON.stringify(key)}::jsonb, ${await calculateJwkThumbprint(key, 'sha256')},
-        'Matrix') returning id`.execute(test.database)
-  ).rows;
-
-  return { method: 'delete', path: `/api/v1/devices/${device?.id}` };
-};
-
-// a queued planting announced by `owner`, and the matching signed body; the matrix has no MinIO, so its owner gets
-// past the role gate and ownership to 503 (MinIO unreachable, ADR-010)
-const submissionOf = async (owner: Role | 'other'): Promise<Probe> => {
-  announced += 1;
-
-  const sha256 = String(announced).padStart(64, '0');
-  const [row] = (
-    await sql<{
-      id: string;
-    }>`insert into public.submissions (profile_id, campaign_address, kind, milestone,
-        slot_id, video_sha256, video_path, status)
-      values (${profileOf.get(owner)}, ${PLANTING_CAMPAIGN}, 'PLANTED', 0, 1, ${sha256}, 'matrix.mp4', 'queued')
-      returning id`.execute(test.database)
-  ).rows;
-
-  return {
-    method: 'post',
-    path: `/api/v1/evidence/${row?.id}/submit`,
-    body: {
-      payload: {
-        v: 1,
-        kind: 'PLANTED',
-        campaign: PLANTING_CAMPAIGN,
-        slotId: '1',
-        treeId: null,
-        milestone: 0,
-        videoSha256: sha256,
-        lat: 0,
-        lon: 0,
-        acc: 5,
-        capturedAt: '2026-10-23T03:00:00.000Z',
-        challenge: null,
-        deviceKey: 'x'.repeat(43),
-      },
-      canonical: '{}',
-      signature: 'A'.repeat(86),
-    },
-  };
-};
-
-// the same queued submission, read back by its owner
-const submissionReadOf = async (owner: Role | 'other'): Promise<Probe> => ({
-  method: 'get',
-  path: (await submissionOf(owner)).path.replace(/\/submit$/, ''),
-});
-
-// a planting waiting for review on PLANTING_CAMPAIGN, on its own slot each call (one live planting per slot)
-const plantingInReview = async (): Promise<string> => {
-  announced += 1;
-
-  const [row] = (
-    await sql<{
-      id: string;
-    }>`insert into public.submissions (profile_id, campaign_address, kind, milestone, slot_id, video_sha256, status)
-      values (${profileOf.get('other')}, ${PLANTING_CAMPAIGN}, 'PLANTED', 0, ${100 + announced},
-        ${String(announced).padStart(64, 'f')}, 'needs_review')
-      returning id`.execute(test.database)
-  ).rows;
-
-  return row?.id ?? '';
-};
-
-// an open audit session on tree 3001's campaign, owned by `owner`
-const sessionOf = async (owner: Role | 'other'): Promise<Probe> => {
-  const [row] = (
-    await sql<{
-      id: string;
-    }>`insert into public.audit_sessions (auditor_profile_id, campaign_address, seed_block_number, seed_block_hash,
-        seed, population_tree_ids, sample_size)
-      values (${profileOf.get(owner)}, ${TREE_CAMPAIGN}, 1, ${ISSUED_TX}, ${ISSUED_TX}, array[${TREE_ID}]::bigint[], 1)
-      returning id`.execute(test.database)
-  ).rows;
-
-  return { method: 'get', path: `/api/v1/audit/sessions/${row?.id}` };
-};
-
-const jobOf = async (owner: Role | 'other'): Promise<Probe> => ({
-  method: 'get',
-  path: `/api/v1/jobs/${await aJob(test.database, profileOf.get(owner) ?? null)}`,
-});
-
-let announced = 0;
+const probes = matrixProbes(() => test.database, profileOf);
 
 // Every route the composition root serves under /api/v1, and who may call it.
 const MATRIX: AccessMatrix = {
@@ -230,15 +124,15 @@ const MATRIX: AccessMatrix = {
     probe: async () => ({
       method: 'post',
       path: '/api/v1/devices',
-      body: { publicKeyJwk: publicKey(), label: 'Matrix' },
+      body: { publicKeyJwk: probes.publicKey(), label: 'Matrix' },
     }),
     ok: 201,
   },
   'DELETE /devices/:id': {
     allowed: ['planter'],
-    probe: deviceOf,
+    probe: probes.deviceOf,
     ok: 200,
-    foreign: () => deviceOf('other'),
+    foreign: () => probes.deviceOf('other'),
   },
   'GET /planter/trees': {
     allowed: ['planter'],
@@ -268,8 +162,6 @@ const MATRIX: AccessMatrix = {
   'POST /evidence/upload-url': {
     allowed: ['planter'],
     probe: async () => {
-      announced += 1;
-
       return {
         method: 'post',
         path: '/api/v1/evidence/upload-url',
@@ -278,7 +170,7 @@ const MATRIX: AccessMatrix = {
           campaign: PLANTING_CAMPAIGN,
           slotId: '1',
           milestone: 0,
-          sha256: String(announced).padStart(64, '0'),
+          sha256: probes.nextSha(),
           sizeBytes: 1000,
         },
       };
@@ -287,15 +179,15 @@ const MATRIX: AccessMatrix = {
   },
   'POST /evidence/:submissionId/submit': {
     allowed: ['planter'],
-    probe: submissionOf,
+    probe: probes.submissionOf,
     ok: 503,
-    foreign: () => submissionOf('other'),
+    foreign: () => probes.submissionOf('other'),
   },
   'GET /evidence/:submissionId': {
     allowed: ROLES,
-    probe: submissionReadOf,
+    probe: probes.submissionReadOf,
     ok: 200,
-    foreign: () => submissionReadOf('other'),
+    foreign: () => probes.submissionReadOf('other'),
   },
   'POST /campaigns/metadata': {
     allowed: ['donor', 'operator'],
@@ -395,7 +287,7 @@ const MATRIX: AccessMatrix = {
     allowed: ['operator'],
     probe: async () => ({
       method: 'post',
-      path: `/api/v1/operator/submissions/${await plantingInReview()}/review`,
+      path: `/api/v1/operator/submissions/${await probes.plantingInReview()}/review`,
       body: { approve: false, note: 'Matrix' },
     }),
     ok: 200,
@@ -411,9 +303,28 @@ const MATRIX: AccessMatrix = {
   },
   'GET /audit/sessions/:id': {
     allowed: ['auditor'],
-    probe: sessionOf,
+    probe: probes.sessionOf,
     ok: 200,
-    foreign: () => sessionOf('other'),
+    foreign: () => probes.sessionOf('other'),
+  },
+  'POST /audit/sessions/:id/findings': {
+    allowed: ['auditor'],
+    probe: probes.auditWrite('findings', { treeId: String(TREE_ID), finding: 'ok' }),
+    ok: 200,
+    foreign: () =>
+      probes.auditWrite('findings', { treeId: String(TREE_ID), finding: 'ok' })('other'),
+  },
+  'POST /audit/sessions/:id/close': {
+    allowed: ['auditor'],
+    probe: probes.auditWrite('close', {}),
+    ok: 200,
+    foreign: () => probes.auditWrite('close', {})('other'),
+  },
+  'GET /audit/sessions/:id/report': {
+    allowed: ['auditor'],
+    probe: probes.reportOf,
+    ok: 200,
+    foreign: () => probes.reportOf('other'),
   },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
@@ -421,7 +332,12 @@ const MATRIX: AccessMatrix = {
     probe: { method: 'post', path: '/api/v1/profile', body: { displayName: 'Sari Wulandari' } },
     ok: 200,
   },
-  'GET /jobs/:id': { allowed: ROLES, probe: jobOf, ok: 200, foreign: () => jobOf('other') },
+  'GET /jobs/:id': {
+    allowed: ROLES,
+    probe: probes.jobOf,
+    ok: 200,
+    foreign: () => probes.jobOf('other'),
+  },
 };
 
 const sendAnonymous = ({ method, path, body, headers = {} }: Probe) =>

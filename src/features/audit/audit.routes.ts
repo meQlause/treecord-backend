@@ -3,7 +3,13 @@ import { z } from 'zod';
 import { pathParam } from '../../shared/http/params.js';
 import { allowRoles } from '../../shared/http/roles.js';
 import { validate } from '../../shared/http/validate.js';
-import { openSessionSchema, type OpenSessionInput } from './audit.schema.js';
+import {
+  closeSchema,
+  findingSchema,
+  openSessionSchema,
+  type FindingInput,
+  type OpenSessionInput,
+} from './audit.schema.js';
 import type { createAuditService } from './audit.service.js';
 
 type AuditService = ReturnType<typeof createAuditService>;
@@ -29,5 +35,26 @@ export const auditRouter = (audit: AuditService): Router =>
     .get('/audit/sessions/:id', async (req, res) => {
       res.json(
         await audit.session(res.locals['profile'] as Auditor, pathParam(z.uuid(), req.params.id)),
+      );
+    })
+    .post('/audit/sessions/:id/findings', validate(findingSchema), async (req, res) => {
+      res.json(
+        await audit.record(
+          res.locals['profile'] as Auditor,
+          pathParam(z.uuid(), req.params.id),
+          res.locals['body'] as FindingInput,
+        ),
+      );
+    })
+    .post('/audit/sessions/:id/close', async (req, res) => {
+      const id = pathParam(z.uuid(), req.params.id);
+      // the summary is optional, so is the body
+      const { summary } = closeSchema.parse(req.body ?? {});
+
+      res.json(await audit.close(res.locals['profile'] as Auditor, id, summary));
+    })
+    .get('/audit/sessions/:id/report', async (req, res) => {
+      res.json(
+        await audit.report(res.locals['profile'] as Auditor, pathParam(z.uuid(), req.params.id)),
       );
     });

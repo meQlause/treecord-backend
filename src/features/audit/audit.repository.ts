@@ -80,6 +80,9 @@ const sessionReads = (database: Kysely<DB>) => ({
         sql<string[]>`s.population_tree_ids::text[]`.as('population'),
         's.sample_size',
         's.report_hash',
+        's.report',
+        's.report_notes',
+        's.auditor_profile_id',
         's.created_at',
         's.closed_at',
       ])
@@ -120,8 +123,90 @@ const sessionReads = (database: Kysely<DB>) => ({
       .execute(),
 });
 
+type Lock = 'share' | 'update';
+
+/** §5 and §7: the writes after a session is open, each under the session row's lock. */
+const recordWrites = (database: Kysely<DB>) => ({
+  /** The caller's session status, locked: `share` for a finding, `update` for the close (§5, §7). */
+  lockedStatus: async (id: string, auditorId: string, lock: Lock): Promise<string | undefined> =>
+    (
+      await database
+        .selectFrom('audit_sessions')
+        .select('status')
+        .where('id', '=', id)
+        .where('auditor_profile_id', '=', auditorId)
+        .$call((query) => (lock === 'share' ? query.forShare() : query.forUpdate()))
+        .executeTakeFirst()
+    )?.status,
+
+  /** §5: replaces the tree's earlier finding; undefined when the tree is not in this sample. */
+  recordFinding: (
+    id: string,
+    treeId: string,
+    finding: { finding: 'ok' | 'issue' | 'needs_followup'; notes: string | null; recordedAt: Date },
+  ) =>
+    database
+      .updateTable('audit_samples')
+      .set({ finding: finding.finding, notes: finding.notes, recorded_at: finding.recordedAt })
+      .where('session_id', '=', id)
+      .where('tree_id', '=', treeId)
+      .returning([
+        'position',
+        sql<string>`tree_id::text`.as('tree_id'),
+        'finding',
+        'notes',
+        'recorded_at',
+      ])
+      .executeTakeFirst(),
+
+  /** §7 step 3: the session's challenges in issue order. */
+  issuedChallenges: (id: string) =>
+    database
+      .selectFrom('challenges')
+      .select([
+        sql<string>`tree_id::text`.as('tree_id'),
+        'code',
+        'created_at',
+        'expires_at',
+        'fulfilled_submission_id',
+      ])
+      .where('audit_session_id', '=', id)
+      .orderBy('created_at')
+      .orderBy('id')
+      .execute(),
+
+  walletOf: async (profileId: string): Promise<string | null> =>
+    (
+      await database
+        .selectFrom('profiles')
+        .select('wallet_address')
+        .where('id', '=', profileId)
+        .executeTakeFirstOrThrow()
+    ).wallet_address,
+
+  /** §7 step 5: the report, its hash and the sealed notes, written once. */
+  close: async (
+    id: string,
+    closed: { closedAt: Date; report: object; reportHash: string; notes: object },
+  ): Promise<void> => {
+    await database
+      .updateTable('audit_sessions')
+      .set({
+        status: 'closed',
+        closed_at: closed.closedAt,
+        report: JSON.stringify(closed.report),
+        report_hash: closed.reportHash,
+        report_notes: JSON.stringify(closed.notes),
+      })
+      .where('id', '=', id)
+      .where('status', '=', 'open')
+      .execute();
+  },
+});
+
 export const auditRepository = (database: Kysely<DB>) => ({
   ...openWrites(database),
+  ...recordWrites(database),
   ...sessionReads(database),
 });
 
