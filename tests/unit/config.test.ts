@@ -78,3 +78,16 @@ describe('config — NFR-008: refuse to start with a missing or malformed variab
     }
   });
 });
+
+describe('config — ADR-014: the API holds no key that sends transactions', () => {
+  it('never takes the operator or relayer key, even when the environment sets them (ADR-014)', () => {
+    const config = loadConfig({
+      ...VALID_ENV,
+      OPERATOR_PRIVATE_KEY: `0x${'1'.repeat(64)}`,
+      RELAYER_PRIVATE_KEY: `0x${'2'.repeat(64)}`,
+    });
+
+    expect(Object.keys(config)).not.toContain('OPERATOR_PRIVATE_KEY');
+    expect(Object.keys(config)).not.toContain('RELAYER_PRIVATE_KEY');
+  });
+});
