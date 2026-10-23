@@ -43,6 +43,7 @@ import {
   type TokenVerifier,
 } from './shared/auth/privy.js';
 import { createChainClient } from './shared/chain/client.js';
+import { verifyWalletToken } from './generated/frozen/wallet-auth.js';
 import { createAttester } from './shared/chain/attester.js';
 import { blockTime, chainClock, latestBlock } from './shared/chain/clock.js';
 import { createDatabase, type DatabaseClient } from './shared/db/database.js';
@@ -156,10 +157,22 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
   return container;
 };
 
+const MS_PER_SECOND = 1000;
+
 /** How the API signs a caller in (be-architecture §5 row 7). */
-export const authOptions = ({ config, verifyToken, accountsService }: Cradle): AuthOptions => ({
+export const authOptions = ({
+  config,
+  verifyToken,
+  accountsService,
+  clock,
+}: Cradle): AuthOptions => ({
   verify: verifyToken,
   demoWalletAuth: config.DEMO_WALLET_AUTH,
+  verifyWallet: (token) =>
+    verifyWalletToken(token, {
+      chainId: config.CHAIN_ID,
+      nowSec: Math.floor(clock().getTime() / MS_PER_SECOND),
+    }),
   resolveProfile: accountsService.resolveProfile,
 });
 

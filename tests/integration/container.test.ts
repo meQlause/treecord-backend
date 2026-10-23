@@ -373,7 +373,8 @@ const send = async (role: Role, { method, path, body, headers = {} }: Probe) =>
 // One profile per role; roles past donor are granted by hand, as in production.
 beforeAll(async () => {
   test = await startMigratedDatabase();
-  api = testApi(test.database, await fakePrivy());
+  // no storage, whatever runs on this machine: the submit probe reaches MinIO and gets 503 (ADR-010)
+  api = testApi(test.database, await fakePrivy(), { env: { S3_ENDPOINT: 'http://127.0.0.1:1' } });
 
   for (const role of ROLES) {
     profileOf.set(

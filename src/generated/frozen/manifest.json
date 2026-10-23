@@ -105,6 +105,10 @@
     "src/generated/frozen/schemas.ts": {
       "source": "packages/shared/src/schemas.ts",
       "sha256": "5abd7db8de178ad76d8a8c50d2bfb7d599ed2d74bca272dcf73ebef848bdc840"
+    },
+    "src/generated/frozen/wallet-auth.ts": {
+      "source": "packages/shared/src/wallet-auth.ts",
+      "sha256": "b632b72e3ddd1de4f31985ccd24a3dc16916267ee3a58288a5d60ca91577d9eb"
     }
   }
 }

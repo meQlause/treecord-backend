@@ -14,6 +14,9 @@ export const testApp = (overrides: Partial<AppDependencies> = {}): Express =>
         throw new DomainError('invalid_token');
       },
       demoWalletAuth: false,
+      verifyWallet: async () => {
+        throw new Error('demo wallet sign-in is off');
+      },
       resolveProfile: async () => {
         throw new Error('not reached: every token is refused');
       },

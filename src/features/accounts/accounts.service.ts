@@ -1,3 +1,4 @@
+import { walletFromUserId } from '../../generated/frozen/wallet-auth.js';
 import { keccak256, stringToHex } from 'viem';
 import { CARBON_RIGHTS_AGREEMENT_VERSION } from '../../generated/frozen/constants.js';
 import { DomainError } from '../../shared/errors.js';
@@ -14,8 +15,9 @@ type AccountsDependencies = { repository: AccountsRepository; walletOf: WalletLo
 
 /** docs/BE/features/accounts.md §0: the profile behind a verified token, created on first sign-in. */
 export const createAccountsService = ({ repository, walletOf }: AccountsDependencies) => {
+  // accounts §0 DEMO_WALLET_AUTH: a demo sign-in's wallet is the token's signer, named in its user id, not Privy's
   const lowercaseWallet = async (privyUserId: string): Promise<string | null> =>
-    (await walletOf(privyUserId))?.toLowerCase() ?? null;
+    walletFromUserId(privyUserId) ?? (await walletOf(privyUserId))?.toLowerCase() ?? null;
 
   const mustLoad = async (privyUserId: string): Promise<ProfileRow> => {
     const profile = await repository.byPrivyUserId(privyUserId);

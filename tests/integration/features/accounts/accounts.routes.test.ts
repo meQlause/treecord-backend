@@ -31,6 +31,9 @@ const app = () => {
     auth: {
       verify: privyVerifier({ appId: TEST_APP_ID, resolveKey: privy.resolveKey }),
       demoWalletAuth: false,
+      verifyWallet: async () => {
+        throw new Error('demo wallet sign-in is off');
+      },
       resolveProfile: accounts.resolveProfile,
     },
     privateRouters: [accountsRouter(accounts)],

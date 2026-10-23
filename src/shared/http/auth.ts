@@ -6,16 +6,40 @@ export type AuthOptions = {
   verify: TokenVerifier;
   /** ADR-007: wallet-signature tokens for the demo scripts, off unless DEMO_WALLET_AUTH=true. */
   demoWalletAuth: boolean;
+  /** accounts §0: the lowercase signer of a valid demo token; throws for any other token. */
+  verifyWallet: (token: string) => Promise<string>;
   /** accounts §0 steps 3–6: the caller's profile, created on the first sign-in. */
   resolveProfile: (privyUserId: string) => Promise<unknown>;
 };
 
 const BEARER = /^Bearer (\S+)$/;
 const DEMO_TOKEN_PREFIX = 'wallet.';
+const DEMO_USER_PREFIX = 'wallet:';
 
 /** be-architecture §5 row 7: every private route runs behind this (accounts §0 steps 1–2). */
+/** accounts §0 step 2: the user id a token proves. A demo wallet token is `wallet:<address>`, accepted only when the
+ *  server runs with DEMO_WALLET_AUTH=true; otherwise, and when it does not verify, 401 invalid_token. */
+const userIdOf = async (
+  token: string,
+  { verify, demoWalletAuth, verifyWallet }: AuthOptions,
+): Promise<string> => {
+  if (!token.startsWith(DEMO_TOKEN_PREFIX)) {
+    return (await verify(token)).privyUserId;
+  }
+
+  if (!demoWalletAuth) {
+    throw new DomainError('invalid_token');
+  }
+
+  const wallet = await verifyWallet(token).catch(() => {
+    throw new DomainError('invalid_token');
+  });
+
+  return `${DEMO_USER_PREFIX}${wallet}`;
+};
+
 export const authenticate =
-  ({ verify, resolveProfile }: AuthOptions): RequestHandler =>
+  (options: AuthOptions): RequestHandler =>
   async (req, res, next) => {
     const token = BEARER.exec(req.get('authorization') ?? '')?.[1];
 
@@ -23,15 +47,7 @@ export const authenticate =
       throw new DomainError('missing_token');
     }
 
-    // ponytail: the DEMO_WALLET_AUTH=true path (accounts §0) is not built yet — a demo token is refused either way
-    // until phases.md B8 adds it for the demo scripts.
-    if (token.startsWith(DEMO_TOKEN_PREFIX)) {
-      throw new DomainError('invalid_token');
-    }
-
-    const { privyUserId } = await verify(token);
-
-    res.locals['profile'] = await resolveProfile(privyUserId);
+    res.locals['profile'] = await options.resolveProfile(await userIdOf(token, options));
     next();
   };
 
