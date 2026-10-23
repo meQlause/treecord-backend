@@ -1,0 +1,66 @@
+{
+  "sourceRepo": "treecord-backend",
+  "sourceCommit": "4a4331e46ecad97eb2f833f39acb6ee09c97dc91",
+  "files": {
+    "abis/campaign.ts": {
+      "source": "packages/shared/src/abis/campaign.ts",
+      "sha256": "d55cda5dcbd08c12183053f0eafc1b3be65b6daed7a91e93c8d6d4eaca4aba50"
+    },
+    "abis/campaignFactory.ts": {
+      "source": "packages/shared/src/abis/campaignFactory.ts",
+      "sha256": "c67678c66819db119ea1ab77c63c3df86781ca7863b879c5f34431668b9bcbfc"
+    },
+    "abis/carbonLedger.ts": {
+      "source": "packages/shared/src/abis/carbonLedger.ts",
+      "sha256": "ceeccf6175d6f98624d7861053cd8b5485ee11f30130b9c4b56fee5a672f0a88"
+    },
+    "abis/index.ts": {
+      "source": "packages/shared/src/abis/index.ts",
+      "sha256": "76efeced8111081616ab0f0142d6f59397677f9b2fb8f5cfee805420e3cdf079"
+    },
+    "abis/treeRegistry.ts": {
+      "source": "packages/shared/src/abis/treeRegistry.ts",
+      "sha256": "6afeb278c54b252dcc0acab53379944a861a27ddc290d01a0e8ce205ff0123c8"
+    },
+    "abis/treecordRoles.ts": {
+      "source": "packages/shared/src/abis/treecordRoles.ts",
+      "sha256": "232ba39fe0e97edd0c599700a021757325d817607a3b0423eeb167d34570ea5e"
+    },
+    "abis/verificationGateway.ts": {
+      "source": "packages/shared/src/abis/verificationGateway.ts",
+      "sha256": "604c6a45a5f98ab19e0ef71a3e0ca91a3f16cec631467fdb9b1c562103a5df29"
+    },
+    "addresses.ts": {
+      "source": "packages/shared/src/addresses.ts",
+      "sha256": "2d8f8c693ae7acefeb7b38ae64207cd2b71698bf35d1af69ae0566b5299f11ab"
+    },
+    "ai.ts": {
+      "source": "packages/shared/src/ai.ts",
+      "sha256": "c4111409f262ce15c009788d4e28db8a37aaf8dcf822f2543c13b8a752eb7cb1"
+    },
+    "constants.ts": {
+      "source": "packages/shared/src/constants.ts",
+      "sha256": "f151887d6454da750807b3714dd28574031ac7d7f948a53f25cdf256f47c9f8b"
+    },
+    "eip712.ts": {
+      "source": "packages/shared/src/eip712.ts",
+      "sha256": "f6c5e2fc54369b3347dd75e5f0167cceb9740831640371600356e1bfb398bffe"
+    },
+    "evidence.ts": {
+      "source": "packages/shared/src/evidence.ts",
+      "sha256": "8e8cc1fac1aa84060a2f2f87eff0d0fc7eb3347c5b0f98a44dd0c5a18b8711b6"
+    },
+    "jobs.ts": {
+      "source": "packages/shared/src/jobs.ts",
+      "sha256": "6205e6b804ea9734ff6f4793d75d927a3a0765c2595e035a63a350c9a98860ea"
+    },
+    "policy.ts": {
+      "source": "packages/shared/src/policy.ts",
+      "sha256": "8091bafec127e55ba3a16f5a44f048f2fec1011764d64fbb40e95741c630ad8d"
+    },
+    "schemas.ts": {
+      "source": "packages/shared/src/schemas.ts",
+      "sha256": "64c637a3a9f9fe31ec6d878a9394573b3885de86bbe742a6c00c0e601b3b7dae"
+    }
+  }
+}

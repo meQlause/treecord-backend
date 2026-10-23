@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "knip": "knip",
     "check": "prettier --check . && eslint --max-warnings=0 . && tsc --noEmit && knip",
-    "prepare": "husky"
+    "prepare": "husky",
+    "check:frozen": "node scripts/check-frozen.ts"
   },
   "dependencies": {
     "express": "5.3.0",
