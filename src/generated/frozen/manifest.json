@@ -2,63 +2,99 @@
   "sourceRepo": "treecord-backend",
   "sourceCommit": "4a4331e46ecad97eb2f833f39acb6ee09c97dc91",
   "files": {
-    "abis/campaign.ts": {
+    "migrations/101_20261016120000_core.sql": {
+      "source": "supabase/migrations/20261016120000_core.sql",
+      "sha256": "71394973c5eaaf035f75c4151de567ec25a8629f034fed1d0d60c31af4b38ddb"
+    },
+    "migrations/102_20261016120100_evidence.sql": {
+      "source": "supabase/migrations/20261016120100_evidence.sql",
+      "sha256": "5e064e792e41888a4344d60aac7210739ddf8e1b214fb84c2e7e1216fd0a0cf1"
+    },
+    "migrations/103_20261016120200_carbon.sql": {
+      "source": "supabase/migrations/20261016120200_carbon.sql",
+      "sha256": "8ce15e4e0d37c8102fa7cee30ca4031b7eac6898e5e047412cc79ca48c65f93c"
+    },
+    "migrations/104_20261016120300_audit_ops.sql": {
+      "source": "supabase/migrations/20261016120300_audit_ops.sql",
+      "sha256": "3775a2dfb05c6e3c33e396371700b0649164d51d6e81f0939894e3d03a62734e"
+    },
+    "migrations/105_20261016120400_security.sql": {
+      "source": "supabase/migrations/20261016120400_security.sql",
+      "sha256": "231a2f86996a8b323cb98ccee95261c8ca646f298734e0220ffbf1ea7e71b77c"
+    },
+    "migrations/106_20261018120000_relayer_sent_reclaim.sql": {
+      "source": "supabase/migrations/20261018120000_relayer_sent_reclaim.sql",
+      "sha256": "649fccf9eb977226c6201f9ccdd7eb17adf73c19cb44ba7765083d002d4359c5"
+    },
+    "migrations/107_20261018130000_reports_audit.sql": {
+      "source": "supabase/migrations/20261018130000_reports_audit.sql",
+      "sha256": "87c9ebfd5119ab4fa2b4d86728e7680954da7ac377394528058bc9489500e0bd"
+    },
+    "migrations/108_20261018140000_set_price_job.sql": {
+      "source": "supabase/migrations/20261018140000_set_price_job.sql",
+      "sha256": "9e0306a8d5e4543f223b38f81750984a5c083008fe73bfcffd3bfa75a469ad30"
+    },
+    "migrations/109_20261018150000_demo_reset.sql": {
+      "source": "supabase/migrations/20261018150000_demo_reset.sql",
+      "sha256": "a277de69c7e66c6d1b58dc494057db60a64c8870aa53df959a890d4351e51ab2"
+    },
+    "src/generated/frozen/abis/campaign.ts": {
       "source": "packages/shared/src/abis/campaign.ts",
       "sha256": "d55cda5dcbd08c12183053f0eafc1b3be65b6daed7a91e93c8d6d4eaca4aba50"
     },
-    "abis/campaignFactory.ts": {
+    "src/generated/frozen/abis/campaignFactory.ts": {
       "source": "packages/shared/src/abis/campaignFactory.ts",
       "sha256": "c67678c66819db119ea1ab77c63c3df86781ca7863b879c5f34431668b9bcbfc"
     },
-    "abis/carbonLedger.ts": {
+    "src/generated/frozen/abis/carbonLedger.ts": {
       "source": "packages/shared/src/abis/carbonLedger.ts",
       "sha256": "ceeccf6175d6f98624d7861053cd8b5485ee11f30130b9c4b56fee5a672f0a88"
     },
-    "abis/index.ts": {
+    "src/generated/frozen/abis/index.ts": {
       "source": "packages/shared/src/abis/index.ts",
       "sha256": "76efeced8111081616ab0f0142d6f59397677f9b2fb8f5cfee805420e3cdf079"
     },
-    "abis/treeRegistry.ts": {
-      "source": "packages/shared/src/abis/treeRegistry.ts",
-      "sha256": "6afeb278c54b252dcc0acab53379944a861a27ddc290d01a0e8ce205ff0123c8"
-    },
-    "abis/treecordRoles.ts": {
+    "src/generated/frozen/abis/treecordRoles.ts": {
       "source": "packages/shared/src/abis/treecordRoles.ts",
       "sha256": "232ba39fe0e97edd0c599700a021757325d817607a3b0423eeb167d34570ea5e"
     },
-    "abis/verificationGateway.ts": {
+    "src/generated/frozen/abis/treeRegistry.ts": {
+      "source": "packages/shared/src/abis/treeRegistry.ts",
+      "sha256": "6afeb278c54b252dcc0acab53379944a861a27ddc290d01a0e8ce205ff0123c8"
+    },
+    "src/generated/frozen/abis/verificationGateway.ts": {
       "source": "packages/shared/src/abis/verificationGateway.ts",
       "sha256": "604c6a45a5f98ab19e0ef71a3e0ca91a3f16cec631467fdb9b1c562103a5df29"
     },
-    "addresses.ts": {
+    "src/generated/frozen/addresses.ts": {
       "source": "packages/shared/src/addresses.ts",
       "sha256": "2d8f8c693ae7acefeb7b38ae64207cd2b71698bf35d1af69ae0566b5299f11ab"
     },
-    "ai.ts": {
+    "src/generated/frozen/ai.ts": {
       "source": "packages/shared/src/ai.ts",
       "sha256": "c4111409f262ce15c009788d4e28db8a37aaf8dcf822f2543c13b8a752eb7cb1"
     },
-    "constants.ts": {
+    "src/generated/frozen/constants.ts": {
       "source": "packages/shared/src/constants.ts",
       "sha256": "f151887d6454da750807b3714dd28574031ac7d7f948a53f25cdf256f47c9f8b"
     },
-    "eip712.ts": {
+    "src/generated/frozen/eip712.ts": {
       "source": "packages/shared/src/eip712.ts",
       "sha256": "f6c5e2fc54369b3347dd75e5f0167cceb9740831640371600356e1bfb398bffe"
     },
-    "evidence.ts": {
+    "src/generated/frozen/evidence.ts": {
       "source": "packages/shared/src/evidence.ts",
       "sha256": "8e8cc1fac1aa84060a2f2f87eff0d0fc7eb3347c5b0f98a44dd0c5a18b8711b6"
     },
-    "jobs.ts": {
+    "src/generated/frozen/jobs.ts": {
       "source": "packages/shared/src/jobs.ts",
       "sha256": "6205e6b804ea9734ff6f4793d75d927a3a0765c2595e035a63a350c9a98860ea"
     },
-    "policy.ts": {
+    "src/generated/frozen/policy.ts": {
       "source": "packages/shared/src/policy.ts",
       "sha256": "8091bafec127e55ba3a16f5a44f048f2fec1011764d64fbb40e95741c630ad8d"
     },
-    "schemas.ts": {
+    "src/generated/frozen/schemas.ts": {
       "source": "packages/shared/src/schemas.ts",
       "sha256": "64c637a3a9f9fe31ec6d878a9394573b3885de86bbe742a6c00c0e601b3b7dae"
     }

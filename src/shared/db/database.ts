@@ -1,8 +1,9 @@
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import postgresDriver from 'pg';
+import type { DB } from '../../generated/db.js';
 
-// Replaced by the kysely-codegen output (src/generated/db.ts) once B1's migrations exist.
-type Database = Record<string, never>;
+// The schema as kysely-codegen read it from the migrated database (npm run db:codegen, after every migration).
+type Database = DB;
 
 export type DatabaseClient = Kysely<Database>;
 

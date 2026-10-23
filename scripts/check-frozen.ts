@@ -1,5 +1,5 @@
-// ADR-002: the frozen copies in src/generated/frozen/ match their SHA-256 fingerprints, and — when treecord-backend
-// is checked out next to this repository — still match their source files there.
+// ADR-002, ADR-019: the frozen copies — src/generated/frozen/ and the nine migrations/1nn_*.sql — match their SHA-256
+// fingerprints, and, when treecord-backend is checked out next to this repository, still match their source files.
 //   node scripts/check-frozen.ts           check
 //   node scripts/check-frozen.ts --write   record the fingerprints after a deliberate re-copy
 import { createHash } from 'node:crypto';
@@ -9,8 +9,21 @@ import { join, relative, sep } from 'node:path';
 const FROZEN = 'src/generated/frozen';
 const MANIFEST = join(FROZEN, 'manifest.json');
 const SOURCE_REPO = process.env['TREECORD_BACKEND_DIR'] ?? '../treecord-backend';
-// Where each copied file lives in treecord-backend (SRS §2.6).
-const SOURCE_DIR = 'packages/shared/src';
+const FROZEN_MIGRATION = /^1\d\d_/;
+// Each frozen root, which of its files are frozen, and where each lives in treecord-backend (SRS §2.6).
+const ROOTS = [
+  {
+    dir: FROZEN,
+    frozen: (file: string) => file !== 'manifest.json',
+    source: (file: string) => `packages/shared/src/${file}`,
+  },
+  {
+    // migrations/101_20261016120000_core.sql is supabase/migrations/20261016120000_core.sql
+    dir: 'migrations',
+    frozen: (file: string) => FROZEN_MIGRATION.test(file),
+    source: (file: string) => `supabase/migrations/${file.replace(FROZEN_MIGRATION, '')}`,
+  },
+];
 
 type Manifest = {
   sourceRepo: string;
@@ -26,11 +39,16 @@ const walk = (dir: string): string[] =>
     entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
   );
 
-const copies = (): string[] =>
-  walk(FROZEN)
-    .map((file) => relative(FROZEN, file).split(sep).join('/'))
-    .filter((file) => file !== 'manifest.json')
-    .sort();
+const posix = (path: string): string => path.split(sep).join('/');
+
+// Repository-relative path of every frozen copy, with the treecord-backend path it was copied from.
+const copies = (): Array<{ path: string; source: string }> =>
+  ROOTS.flatMap(({ dir, frozen, source }) =>
+    walk(dir)
+      .map((file) => ({ path: posix(file), file: posix(relative(dir, file)) }))
+      .filter(({ file }) => frozen(file))
+      .map(({ path, file }) => ({ path, source: source(file) })),
+  ).sort((left, right) => left.path.localeCompare(right.path));
 
 // The source commit, read from .git directly: a loose ref, or packed-refs after `git gc`.
 const sourceCommit = (): string => {
@@ -58,14 +76,14 @@ const sourceCommit = (): string => {
 };
 
 const write = (): void => {
-  const commit = sourceCommit();
   const files = Object.fromEntries(
-    copies().map((file) => [
-      file,
-      { source: `${SOURCE_DIR}/${file}`, sha256: sha256(join(FROZEN, file)) },
-    ]),
+    copies().map(({ path, source }) => [path, { source, sha256: sha256(path) }]),
   );
-  const manifest: Manifest = { sourceRepo: 'treecord-backend', sourceCommit: commit, files };
+  const manifest: Manifest = {
+    sourceRepo: 'treecord-backend',
+    sourceCommit: sourceCommit(),
+    files,
+  };
 
   writeFileSync(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
 };
@@ -74,17 +92,14 @@ const check = (): string[] => {
   const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8')) as Manifest;
   const listed = Object.entries(manifest.files);
   const changed = listed
-    .filter(
-      ([file, entry]) =>
-        !existsSync(join(FROZEN, file)) || sha256(join(FROZEN, file)) !== entry.sha256,
-    )
+    .filter(([path, entry]) => !existsSync(path) || sha256(path) !== entry.sha256)
     .map(
-      ([file]) =>
-        `${FROZEN}/${file}: differs from its fingerprint — frozen files are re-copied, never edited`,
+      ([path]) =>
+        `${path}: differs from its fingerprint — frozen files are re-copied, never edited`,
     );
   const unlisted = copies()
-    .filter((file) => !(file in manifest.files))
-    .map((file) => `${FROZEN}/${file}: not in manifest.json`);
+    .filter(({ path }) => !(path in manifest.files))
+    .map(({ path }) => `${path}: not in manifest.json`);
   const upstream = existsSync(SOURCE_REPO)
     ? listed
         .filter(([, entry]) => {
