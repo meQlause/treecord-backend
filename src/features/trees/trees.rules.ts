@@ -18,8 +18,8 @@ const LON_RANGE = 180;
 
 /** FR-053: the centre of a geohash cell, 6 decimals; what everyone but the planter, operators and auditors sees. */
 export const geohashCentre = (geohash: string): { lat: number; lon: number } => {
-  const lat = [-LAT_RANGE, LAT_RANGE];
-  const lon = [-LON_RANGE, LON_RANGE];
+  const lat = { low: -LAT_RANGE, high: LAT_RANGE };
+  const lon = { low: -LON_RANGE, high: LON_RANGE };
   let even = true;
 
   for (const char of geohash) {
@@ -28,15 +28,16 @@ export const geohashCentre = (geohash: string): { lat: number; lon: number } => 
     for (let bit = BITS_PER_CHAR - 1; bit >= 0; bit -= 1) {
       // bits alternate longitude, latitude; each halves the range it belongs to
       const range = even ? lon : lat;
-      const middle = ((range[0] ?? 0) + (range[1] ?? 0)) / 2;
+      const middle = (range.low + range.high) / 2;
+      const side = (value >> bit) & 1 ? 'low' : 'high';
 
-      range[(value >> bit) & 1 ? 0 : 1] = middle;
+      range[side] = middle;
       even = !even;
     }
   }
 
-  const centre = (range: number[]): number =>
-    Number((((range[0] ?? 0) + (range[1] ?? 0)) / 2).toFixed(DECIMALS));
+  const centre = (range: { low: number; high: number }): number =>
+    Number(((range.low + range.high) / 2).toFixed(DECIMALS));
 
   return { lat: centre(lat), lon: centre(lon) };
 };

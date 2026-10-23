@@ -6,8 +6,8 @@ import {
 import { isoInstant as iso } from '../../../shared/instant.js';
 
 // docs/BE/features/evidence-prechecks.md: pure rules, every instant and row passed in (epoch ms). This file holds the
-// target stage (checks 9–15, the capture blocks of S16–S19) and the link stage (4, 8, 9–13, 15); submit and approve
-// come with their endpoints.
+// target stage (checks 9–15, the capture blocks of S16–S19) and the link stage (4, 8, 9–13, 15); the submit stage is in
+// submit.rules.ts, the approve stage comes with the review endpoint.
 
 const MS_PER_SECOND = 1000;
 // a held submission is shown by the first eight characters of its id (S21 "5c1e9a7d · needs_review")
@@ -16,6 +16,17 @@ const SHORT_ID = 8;
 export type EvidenceKind = 'PLANTED' | 'ALIVE' | 'DEAD' | 'REPLANTED';
 
 export type Reason =
+  | 'device_unknown_or_revoked'
+  | 'device_not_owned'
+  | 'signature_invalid'
+  | 'hash_mismatch'
+  | 'stale_capture'
+  | 'future_capture'
+  | 'gps_inaccurate'
+  | 'outside_region'
+  | 'moved_tree'
+  | 'challenge_missing'
+  | 'tag_mismatch'
   | 'duplicate_video'
   | 'video_too_short'
   | 'video_too_long'
@@ -30,7 +41,13 @@ export type Reason =
   | 'already_reported'
   | 'tag_missing';
 
-type CheckId =
+export type CheckId =
+  | 'device'
+  | 'signature'
+  | 'video_hash'
+  | 'capture_time'
+  | 'gps_accuracy'
+  | 'location'
   | 'unique_video'
   | 'duration'
   | 'ownership'
@@ -76,18 +93,16 @@ export type TargetFacts = {
   issuedTag: string | null;
 };
 
-/** FR-137, `Campaign._window`: opens at planting + paused time + due units, closes one unit later; both ends count. */
+/** FR-137, `Campaign._window`: opens at planting + paused time + the milestone's due month in units, closes one unit
+ *  later; both ends count. */
 export const milestoneWindow = (
   plantedAt: number,
   pausedSeconds: string,
   unitSeconds: string,
-  milestone: number,
+  dueMonth: number,
 ): { opensAt: number; closesAt: number } => {
   const unit = Number(unitSeconds) * MS_PER_SECOND;
-  const opensAt =
-    plantedAt +
-    Number(pausedSeconds) * MS_PER_SECOND +
-    (MILESTONE_DUE_UNITS[milestone] ?? 0) * unit;
+  const opensAt = plantedAt + Number(pausedSeconds) * MS_PER_SECOND + dueMonth * unit;
 
   return { opensAt, closesAt: opensAt + unit };
 };
@@ -105,9 +120,13 @@ export const currentMilestone = (settled: {
   return unsettled === -1 ? null : unsettled;
 };
 
-type Judged = { value: string; limit: string; reason: Reason };
+export type Judged = { value: string; limit: string; reason: Reason };
 
-const row = (check: CheckId, passed: boolean, { value, limit, reason }: Judged): CheckRow => ({
+export const row = (
+  check: CheckId,
+  passed: boolean,
+  { value, limit, reason }: Judged,
+): CheckRow => ({
   check,
   ok: passed,
   value,
@@ -156,7 +175,9 @@ const treeStatus = ({ kind, tree, chainTime }: TargetFacts): CheckRow => {
 };
 
 const window = ({ tree, milestone, chainTime }: TargetFacts): CheckRow => {
-  if (tree === null || milestone === null) {
+  const dueMonth = milestone === null ? undefined : MILESTONE_DUE_UNITS[milestone];
+
+  if (tree === null || dueMonth === undefined) {
     return row('milestone_window', false, {
       value: 'closed',
       limit: 'no window',
@@ -168,7 +189,7 @@ const window = ({ tree, milestone, chainTime }: TargetFacts): CheckRow => {
     tree.plantedAt,
     tree.pausedSeconds,
     tree.unitSeconds,
-    milestone,
+    dueMonth,
   );
   const open = opensAt <= chainTime && chainTime <= closesAt;
 
@@ -263,7 +284,7 @@ const uniqueVideo = ({ existingByHash, callerProfileId }: LinkFacts): CheckRow =
 };
 
 /** §2 check 8: 4–12 s, both edges pass; an unknown duration is not checked (FR-136 "when given"). */
-const duration = ({ durationSec }: LinkFacts): CheckRow => {
+export const duration = ({ durationSec }: { durationSec: number | null }): CheckRow => {
   const limit = `${SERVER_VIDEO_MIN_SEC}–${SERVER_VIDEO_MAX_SEC} s`;
 
   if (durationSec === null) {

@@ -31,6 +31,8 @@ type Clocks = {
   clock?: () => Date;
   /** A block's timestamp; by default the RPC cannot be reached. */
   blockTime?: (blockNumber: string) => Promise<Date>;
+  /** Variables over the valid local environment, e.g. a test MinIO's endpoints. */
+  env?: Record<string, string>;
 };
 
 /** The production composition (src/container.ts) with only the outside world swapped: the test database, the fake
@@ -44,9 +46,10 @@ export const testApi = (
     blockTime = async () => {
       throw new Error('no RPC in this test');
     },
+    env = {},
   }: Clocks = {},
 ): TestApi => {
-  const { cradle } = createRootContainer(loadConfig(VALID_ENV)).register({
+  const { cradle } = createRootContainer(loadConfig({ ...VALID_ENV, ...env })).register({
     database: asValue(database),
     verifyToken: asValue(privyVerifier({ appId: TEST_APP_ID, resolveKey: privy.resolveKey })),
     walletOf: asValue(async () => null),

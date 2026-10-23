@@ -50,6 +50,46 @@ const deviceOf = async (owner: Role | 'other'): Promise<Probe> => {
   return { method: 'delete', path: `/api/v1/devices/${device?.id}` };
 };
 
+// a queued planting announced by `owner`, and the matching signed body; the matrix has no MinIO, so its owner gets
+// past the role gate and ownership to 503 (MinIO unreachable, ADR-010)
+const submissionOf = async (owner: Role | 'other'): Promise<Probe> => {
+  announced += 1;
+
+  const sha256 = String(announced).padStart(64, '0');
+  const [row] = (
+    await sql<{
+      id: string;
+    }>`insert into public.submissions (profile_id, campaign_address, kind, milestone,
+        slot_id, video_sha256, video_path, status)
+      values (${profileOf.get(owner)}, ${PLANTING_CAMPAIGN}, 'PLANTED', 0, 1, ${sha256}, 'matrix.mp4', 'queued')
+      returning id`.execute(test.database)
+  ).rows;
+
+  return {
+    method: 'post',
+    path: `/api/v1/evidence/${row?.id}/submit`,
+    body: {
+      payload: {
+        v: 1,
+        kind: 'PLANTED',
+        campaign: PLANTING_CAMPAIGN,
+        slotId: '1',
+        treeId: null,
+        milestone: 0,
+        videoSha256: sha256,
+        lat: 0,
+        lon: 0,
+        acc: 5,
+        capturedAt: '2026-10-23T03:00:00.000Z',
+        challenge: null,
+        deviceKey: 'x'.repeat(43),
+      },
+      canonical: '{}',
+      signature: 'A'.repeat(86),
+    },
+  };
+};
+
 const jobOf = async (owner: Role | 'other'): Promise<Probe> => ({
   method: 'get',
   path: `/api/v1/jobs/${await aJob(test.database, profileOf.get(owner) ?? null)}`,
@@ -202,6 +242,12 @@ const MATRIX: AccessMatrix = {
       };
     },
     ok: 201,
+  },
+  'POST /evidence/:submissionId/submit': {
+    allowed: ['planter'],
+    probe: submissionOf,
+    ok: 503,
+    foreign: () => submissionOf('other'),
   },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {

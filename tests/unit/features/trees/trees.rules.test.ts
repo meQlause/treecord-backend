@@ -5,6 +5,7 @@ import {
   milestoneAmounts,
   milestoneStatus,
   milestoneWindows,
+  sumAmounts,
 } from '../../../../src/features/trees/trees.rules.js';
 
 const epochMs = (iso: string): number => Date.parse(iso);
@@ -132,5 +133,13 @@ describe('currentMilestone (FR-057)', () => {
 
   it('5 once all six are settled', () => {
     expect(currentMilestone([0, 1, 2, 3, 4], [5])).toBe(5);
+  });
+});
+
+describe('sumAmounts (FR-057)', () => {
+  it('adds decimal strings as bigint, keeping digits past 2^53 (REG-001)', () => {
+    expect(sumAmounts(['1050000', '1050000'])).toBe('2100000');
+    expect(sumAmounts(['9007199254740993', '1'])).toBe('9007199254740994');
+    expect(sumAmounts([])).toBe('0');
   });
 });

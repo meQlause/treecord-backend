@@ -1,4 +1,4 @@
-import { sql, type Insertable, type Kysely } from 'kysely';
+import { sql, type Insertable, type Kysely, type Updateable } from 'kysely';
 import type { DB, Submissions } from '../../generated/db.js';
 
 // docs/BE/features/evidence.md §1: the facts behind one capture target. Ids are text (REG-001).
@@ -110,7 +110,7 @@ const treeReads = (database: Kysely<DB>) => ({
   openChallenge: (treeId: string, now: Date) =>
     database
       .selectFrom('challenges')
-      .select(['code', 'expires_at'])
+      .select(['id', 'code', 'expires_at'])
       .where('tree_id', '=', treeId)
       .where('fulfilled_submission_id', 'is', null)
       .where('expires_at', '>', now)
@@ -160,12 +160,59 @@ const linkReads = (database: Kysely<DB>) => ({
   },
 });
 
+/** §3: the submission a submit acts on, and the device its payload names. */
+const submitReads = (database: Kysely<DB>) => ({
+  /** Locked for the rest of the transaction: a second submit of the same row waits here, then replays. */
+  submission: (id: string, lock: boolean) =>
+    database
+      .selectFrom('submissions')
+      .select([
+        'id',
+        'profile_id',
+        'status',
+        'kind',
+        'campaign_address',
+        'slot_id',
+        sql<string | null>`tree_id::text`.as('tree_id'),
+        'milestone',
+        'video_sha256',
+        'video_path',
+        sql<number | null>`duration_sec::float8`.as('duration_sec'),
+        'reject_reasons',
+      ])
+      .where('id', '=', id)
+      .$if(lock, (query) => query.forUpdate())
+      .executeTakeFirst(),
+
+  deviceByThumbprint: (thumbprint: string) =>
+    database
+      .selectFrom('devices')
+      .select(['id', 'profile_id', 'revoked_at', 'public_key_jwk'])
+      .where('thumbprint', '=', thumbprint)
+      .executeTakeFirst(),
+
+  /** §3 concurrency: the checking write runs under a savepoint a rival's live index may unwind. */
+  savepoint: async (name: string): Promise<void> => {
+    await sql`savepoint ${sql.id(name)}`.execute(database);
+  },
+
+  rollbackTo: async (name: string): Promise<void> => {
+    await sql`rollback to savepoint ${sql.id(name)}`.execute(database);
+  },
+
+  /** §3 step 5: what the submit learned, whatever the outcome. */
+  recordSubmit: async (id: string, values: Updateable<Submissions>): Promise<void> => {
+    await database.updateTable('submissions').set(values).where('id', '=', id).execute();
+  },
+});
+
 export { IN_FLIGHT };
 
 export const evidenceRepository = (database: Kysely<DB>) => ({
   ...slotReads(database),
   ...treeReads(database),
   ...linkReads(database),
+  ...submitReads(database),
 });
 
 export type EvidenceRepository = ReturnType<typeof evidenceRepository>;
@@ -179,3 +226,5 @@ export type TreeTarget = NonNullable<Rows<'treeTarget'>>;
 export type HeldRow = NonNullable<Rows<'livePlanting'>>;
 
 export type HolderRow = NonNullable<Rows<'holderOf'>>;
+
+export type SubmissionRow = NonNullable<Rows<'submission'>>;

@@ -28,6 +28,7 @@ describe('progressBps', () => {
     ['10000000000', '10000000000', 10_000],
     ['0', '10000000000', 0],
     ['9999', '10000000000', 0],
+    ['0', '0', 0],
   ])('%s of %s is %i', (funded, target, expected) => {
     expect(progressBps(funded, target)).toBe(expected);
   });

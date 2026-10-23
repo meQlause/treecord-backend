@@ -66,7 +66,7 @@ export type TreeTargetFacts = {
   facts: TargetFacts;
   held: HeldRow | undefined;
   tree: TreeTarget;
-  challenge: { code: string; expires_at: Date } | undefined;
+  challenge: { id: string; code: string; expires_at: Date } | undefined;
   location: { lat: number | null; lon: number | null } | null;
 };
 

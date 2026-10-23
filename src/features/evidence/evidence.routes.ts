@@ -1,10 +1,14 @@
 import { Router } from 'express';
 import { allowRoles } from '../../shared/http/roles.js';
 import { validate } from '../../shared/http/validate.js';
+import { z } from 'zod';
+import { pathParam } from '../../shared/http/params.js';
 import {
   captureTargetSchema,
+  submitSchema,
   uploadUrlSchema,
   type CaptureTargetQuery,
+  type SubmitBody,
   type UploadUrlBody,
 } from './evidence.schema.js';
 import type { createEvidenceService } from './evidence.service.js';
@@ -28,6 +32,15 @@ export const evidenceRouter = (evidence: EvidenceService): Router =>
       const { status, body } = await evidence.uploadUrl(
         res.locals['profile'] as Caller,
         res.locals['body'] as UploadUrlBody,
+      );
+
+      res.status(status).json(body);
+    })
+    .post('/evidence/:submissionId/submit', validate(submitSchema), async (req, res) => {
+      const { status, body } = await evidence.submit(
+        res.locals['profile'] as Caller,
+        pathParam(z.uuid(), req.params.submissionId),
+        res.locals['body'] as SubmitBody,
       );
 
       res.status(status).json(body);

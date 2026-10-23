@@ -46,6 +46,14 @@ const jobReads = (database: Kysely<DB>) => ({
       .where('job.id', '=', id)
       .executeTakeFirst(),
 
+  /** jobs §4: the job a derived key names (`score:<submissionId>`), or nothing yet. */
+  byKey: (key: string): Promise<StoredJob | undefined> =>
+    database
+      .selectFrom('relayer_jobs')
+      .selectAll()
+      .where('idempotency_key', '=', key)
+      .executeTakeFirst(),
+
   /** jobs §4: slot counts of claim or anchor_assign jobs the chain has not answered yet, in total and for one planter
    *  wallet, with that planter's newest such job. */
   openSlotCounts: (

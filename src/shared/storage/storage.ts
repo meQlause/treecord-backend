@@ -1,4 +1,6 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { createHash } from 'node:crypto';
+import type { Readable } from 'node:stream';
+import { GetObjectCommand, NoSuchKey, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 /** ADR-020: every link the API hands out lives 15 minutes. */
@@ -9,6 +11,9 @@ const MS_PER_SECOND = 1000;
 const SIGNED_UPLOAD_HEADERS = ['content-length', 'content-type', 'x-amz-checksum-sha256'];
 
 export type StorageConfig = {
+  S3_ENDPOINT: string;
+  /** ADR-010: a read from MinIO waits this long, then the request answers 503. */
+  S3_TIMEOUT_MS: number;
   S3_PUBLIC_ENDPOINT: string;
   S3_REGION: string;
   S3_ACCESS_KEY: string;
@@ -23,6 +28,8 @@ type UploadLink = {
 };
 
 export type Storage = {
+  /** FR-132: the SHA-256 and size of a stored object, streamed through the internal endpoint; null when absent. */
+  sha256Of: (bucket: string, key: string) => Promise<{ sha256: string; sizeBytes: number } | null>;
   /** A read link the browser can open: signed for S3_PUBLIC_ENDPOINT, not the internal host (be-stack §2). */
   presignGet: (bucket: string, key: string) => Promise<string>;
   /** A write link for exactly one object: its size, type and SHA-256 are part of the signature. */
@@ -35,22 +42,65 @@ export type Storage = {
   }) => Promise<UploadLink>;
 };
 
+/** FR-132: stream an object through SHA-256, so 25 MiB never sits in memory; null when there is no object. */
+const hashOf = async (
+  client: S3Client,
+  bucket: string,
+  key: string,
+): Promise<{ sha256: string; sizeBytes: number } | null> => {
+  try {
+    const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const hash = createHash('sha256');
+    let sizeBytes = 0;
+
+    for await (const chunk of object.Body as Readable) {
+      hash.update(chunk as Buffer);
+      sizeBytes += (chunk as Buffer).length;
+    }
+
+    return { sha256: hash.digest('hex'), sizeBytes };
+  } catch (error) {
+    if (error instanceof NoSuchKey) {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
 /** MinIO through the plain S3 API (ADR-020). Signing is local: no request reaches MinIO here. `now` is when a link is
  *  signed, injected so a test can sign one that has already expired. */
 export const createStorage = (
   config: StorageConfig,
   now: () => Date = () => new Date(),
 ): Storage => {
+  const credentials = { accessKeyId: config.S3_ACCESS_KEY, secretAccessKey: config.S3_SECRET_KEY };
+  // reads go to the internal host; links are signed for the public one the browser reaches
+  const client = new S3Client({
+    endpoint: config.S3_ENDPOINT,
+    region: config.S3_REGION,
+    forcePathStyle: true,
+    credentials,
+    // without throwOnRequestTimeout the SDK only logs a breached timeout and keeps waiting
+    requestHandler: {
+      requestTimeout: config.S3_TIMEOUT_MS,
+      connectionTimeout: config.S3_TIMEOUT_MS,
+      throwOnRequestTimeout: true,
+    },
+    maxAttempts: 1,
+  });
   const presigner = new S3Client({
     endpoint: config.S3_PUBLIC_ENDPOINT,
     region: config.S3_REGION,
     forcePathStyle: true,
-    credentials: { accessKeyId: config.S3_ACCESS_KEY, secretAccessKey: config.S3_SECRET_KEY },
+    credentials,
     // the SDK would otherwise add a CRC32 of the empty body to every presigned PUT, and no upload would match it
     requestChecksumCalculation: 'WHEN_REQUIRED',
   });
 
   return {
+    sha256Of: (bucket, key) => hashOf(client, bucket, key),
+
     presignGet: (bucket, key) =>
       getSignedUrl(presigner, new GetObjectCommand({ Bucket: bucket, Key: key }), {
         expiresIn: LINK_SECONDS,
@@ -84,4 +134,28 @@ export const createStorage = (
       };
     },
   };
+};
+
+const UNREACHABLE = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'ETIMEDOUT',
+]);
+const SERVER_ERROR = 500;
+
+/** ADR-010: MinIO did not answer in time, could not be reached, or failed itself; the request answers 503. */
+export const isStorageUnavailable = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+
+  return (
+    error.name === 'TimeoutError' ||
+    UNREACHABLE.has(String((error as { code?: unknown }).code)) ||
+    (status !== undefined && status >= SERVER_ERROR)
+  );
 };

@@ -104,6 +104,10 @@ export const openSlotCounts = async (
   return { total: counts.total, own: counts.own, ownLatestJobId: counts.own_latest_id };
 };
 
+/** jobs §4: the job with a derived key, read on the caller's client or transaction. */
+export const jobByKey = (database: DatabaseClient, key: string) =>
+  jobsRepository(database).byKey(key);
+
 /** docs/BE/features/jobs.md §2: the creator or an operator reads a job; for anyone else it does not exist. */
 export const createJobsService = ({ repository }: { repository: JobsRepository }) => ({
   jobFor: async (caller: Caller, id: string): Promise<JobRow> => {

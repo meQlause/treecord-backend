@@ -1,4 +1,6 @@
 export { jobsRouter } from './jobs.routes.js';
 
-// for features that read queued slot claims (jobs §4)
-export { openSlotCounts } from './jobs.service.js';
+// for features whose actions end on-chain (jobs §3, §4)
+export { enqueuedResponse } from './jobs.mapper.js';
+
+export { enqueue, jobByKey, openSlotCounts } from './jobs.service.js';

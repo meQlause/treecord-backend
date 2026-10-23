@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createStorage } from '../../../../src/shared/storage/storage.js';
+import { createServer } from 'node:net';
+import { createStorage, isStorageUnavailable } from '../../../../src/shared/storage/storage.js';
 import { CONTAINER_START_MS } from '../../../helpers/database.js';
 import { startMinio, type TestMinio } from '../../../helpers/minio.js';
 
@@ -12,7 +13,7 @@ let minio: TestMinio;
 const sha256Base64 = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('base64');
 
 const linkFor = (signedAt: Date, key: string) =>
-  createStorage(minio.config, () => signedAt).presignPut({
+  createStorage({ ...minio.config, S3_TIMEOUT_MS: 15_000 }, () => signedAt).presignPut({
     bucket: 'evidence',
     key,
     contentType: 'video/webm',
@@ -66,5 +67,43 @@ describe('a presigned evidence upload (ADR-020)', () => {
     const response = await put(await linkFor(sixteenMinutesAgo, 'sari/late.mp4'), VIDEO);
 
     expect(response.status).toBe(403);
+  });
+});
+
+describe('reading a stored object (FR-132, ADR-010)', () => {
+  it('streams the SHA-256 and size of what is stored, and answers null for nothing', async () => {
+    const storage = createStorage({ ...minio.config, S3_TIMEOUT_MS: 15_000 });
+    const link = await linkFor(new Date(), 'sari/hashed.mp4');
+
+    await put(link, VIDEO);
+
+    expect(await storage.sha256Of('evidence', 'sari/hashed.mp4')).toEqual({
+      sha256: createHash('sha256').update(VIDEO).digest('hex'),
+      sizeBytes: VIDEO.length,
+    });
+    expect(await storage.sha256Of('evidence', 'sari/never-sent.mp4')).toBeNull();
+  });
+
+  it('a MinIO that hangs fails within S3_TIMEOUT_MS, as unavailable', async () => {
+    const hung = createServer(() => undefined);
+
+    await new Promise<void>((resolve) => {
+      hung.listen(0, '127.0.0.1', resolve);
+    });
+
+    const port = (hung.address() as { port: number }).port;
+    const storage = createStorage({
+      ...minio.config,
+      S3_ENDPOINT: `http://127.0.0.1:${port}`,
+      S3_TIMEOUT_MS: 300,
+    });
+    const started = performance.now();
+    const failure = await storage
+      .sha256Of('evidence', 'sari/x.mp4')
+      .catch((error: unknown) => error);
+
+    hung.close();
+    expect(isStorageUnavailable(failure)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(2_000);
   });
 });

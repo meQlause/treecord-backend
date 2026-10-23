@@ -95,7 +95,7 @@ export const milestoneStates = (tree: TreeTiming, settled: Settled, chainTime: n
       tree.plantedAt,
       tree.pausedSeconds,
       tree.unitSeconds,
-      milestone,
+      month,
     );
 
     return {

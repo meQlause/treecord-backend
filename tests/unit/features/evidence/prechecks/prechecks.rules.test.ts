@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  currentMilestone,
   linkChecks,
   milestoneWindow,
   reasonsOf,
@@ -72,7 +73,7 @@ describe('target prechecks', () => {
   });
 
   it('the window is inclusive at both ends (Campaign._window)', () => {
-    expect(milestoneWindow(ALIVE.tree?.plantedAt ?? 0, '0', UNIT, 2)).toEqual({
+    expect(milestoneWindow(ALIVE.tree?.plantedAt ?? 0, '0', UNIT, 6)).toEqual({
       opensAt: OPENS,
       closesAt: CLOSES,
     });
@@ -212,5 +213,25 @@ describe('link prechecks', () => {
     ],
   ])('a hash already held by %s', (_case, holder, expected) => {
     expect(linkReasons({ existingByHash: holder })).toEqual(expected);
+  });
+});
+
+describe('currentMilestone (FR-082, FR-103)', () => {
+  it('the lowest milestone neither paid nor forfeited; null once all six are settled', () => {
+    expect(currentMilestone({ paid: [0, 1], forfeited: [] })).toBe(2);
+    expect(currentMilestone({ paid: [0], forfeited: [1] })).toBe(2);
+    expect(currentMilestone({ paid: [0, 1, 2, 3, 4], forfeited: [5] })).toBeNull();
+  });
+
+  it('an ALIVE target with no milestone left, or one past the sixth, has no open window', () => {
+    expect(reasons({ milestone: null })).toEqual(['milestone_not_open']);
+    expect(reasons({ milestone: 6 })).toEqual(['milestone_not_open']);
+  });
+
+  it('a tree target without its tree row is not Alive', () => {
+    expect(reasons({ tree: null, milestone: null })).toEqual([
+      'wrong_tree_status',
+      'milestone_not_open',
+    ]);
   });
 });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { EVIDENCE_VIDEO_TYPES, MAX_VIDEO_BYTES } from '../../generated/frozen/constants.js';
+import { evidencePayloadSchema } from '../../generated/frozen/schemas.js';
 import { addressParam } from '../../shared/http/params.js';
 
 const positiveId = z.string().regex(/^[1-9]\d{0,18}$/);
@@ -49,3 +50,13 @@ export const uploadUrlSchema = z.discriminatedUnion('kind', [
 ]);
 
 export type UploadUrlBody = z.infer<typeof uploadUrlSchema>;
+
+/** evidence §3: the signed payload (the frozen schema the worker also reads), the canonical string and the signature. */
+export const submitSchema = z.strictObject({
+  payload: evidencePayloadSchema,
+  canonical: z.string().min(2).max(4096),
+  // 64-byte IEEE P1363, base64url
+  signature: z.string().regex(/^[A-Za-z0-9_-]{86}$/),
+});
+
+export type SubmitBody = z.infer<typeof submitSchema>;
