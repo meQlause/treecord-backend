@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler, Response } from 'express';
 import { ZodError } from 'zod';
+import { isChainUnavailable } from '../chain/client.js';
 import { toDomainError } from '../db/constraints.js';
 import { isDatabaseUnavailable } from '../db/database.js';
 import { DomainError, ERROR_REGISTRY, type ErrorCode, type ErrorDetails } from '../errors.js';
@@ -79,7 +80,9 @@ const MATCHERS: ReadonlyArray<(error: unknown) => Outcome | undefined> = [
   },
   // ADR-010: a dependency down or timed out
   (error) =>
-    isDatabaseUnavailable(error) ? { code: 'service_unavailable', log: true } : undefined,
+    isDatabaseUnavailable(error) || isChainUnavailable(error)
+      ? { code: 'service_unavailable', log: true }
+      : undefined,
 ];
 
 /** be-architecture §5 row 10, mounted last: the one place a status is chosen. */
