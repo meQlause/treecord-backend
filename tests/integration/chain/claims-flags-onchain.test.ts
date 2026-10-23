@@ -7,8 +7,10 @@ import { treeRegistryAbi } from '../../../src/generated/frozen/abis/index.js';
 import { CONTAINER_START_MS } from '../../helpers/database.js';
 import {
   activeCampaign,
+  confirmed,
   JAKARTA,
   mined,
+  oneJob,
   startOnchain,
   submitAndLand,
   waitFor,
@@ -45,22 +47,6 @@ const post = async (userId: string, path: string, body: object, key?: string) =>
       ...(key === undefined ? {} : { 'Idempotency-Key': key }),
     })
     .send(body);
-
-/** Both answers to a double submit: one 202 and one 200 replay, naming the same job (ADR-009). */
-const oneJob = (responses: { status: number; body: { job: { id: string } } }[]): string => {
-  const [first, second] = responses;
-
-  expect(responses.map(({ status }) => status).sort()).toEqual([200, 202]);
-  expect(first?.body.job.id).toBe(second?.body.job.id);
-
-  return first?.body.job.id ?? '';
-};
-
-const confirmed = (jobId: string) =>
-  waitFor(`job ${jobId} confirmed`, () =>
-    stack.row(sql<{ tx_hash: string }>`select tx_hash from public.relayer_jobs
-      where id = ${jobId} and status = 'confirmed'`),
-  );
 
 const treeStatus = async (): Promise<string | undefined> =>
   (
@@ -121,7 +107,7 @@ describe('claims and flag resolutions through the API, relayed by the worker, on
     const claim = () => post(SARI, `/campaigns/${campaign}/claims`, { count: 1 }, 'b6a-claim');
     const jobId = oneJob(await Promise.all([claim(), claim()]));
 
-    expect((await confirmed(jobId)).tx_hash).toMatch(TX_HASH);
+    expect((await confirmed(stack, jobId)).tx_hash).toMatch(TX_HASH);
 
     const slot = await waitFor("Sari's slot mirrored", () =>
       stack.row(sql<{ slot_id: string }>`select slot_id::text from public.slots
@@ -164,7 +150,7 @@ describe('claims and flag resolutions through the API, relayed by the worker, on
     const dismiss = () =>
       post(RAKA, `/operator/flags/${flagId}/resolve`, { uphold: false, note: NOTE });
     const jobId = oneJob(await Promise.all([dismiss(), dismiss()]));
-    const job = await confirmed(jobId);
+    const job = await confirmed(stack, jobId);
     const resolved = await waitFor('the flag dismissed', () =>
       stack.row(sql<{
         note_hash: string;

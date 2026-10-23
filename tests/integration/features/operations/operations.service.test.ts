@@ -14,7 +14,7 @@ const address = (index: number): string => `0x${index.toString(16).padStart(40, 
 // mahogany, nine trees planned, one removed: 8 trees over 36 months, FR-174 acceptance 1
 const ROOTS = address(3);
 const FUNDING = address(1);
-// active, its claim deadline before chain time 2026-10-23T03:12:44Z, two open slots unclaimed
+// active, its claim deadline before chain time 2026-10-23T03:12:44Z; no slot taken: three anchors, two open
 const PAST_DEADLINE = address(4);
 const NO_SPECIES = address(5);
 const LOCKED = address(6);
@@ -65,11 +65,17 @@ const estimateColumns = async (campaign: string) =>
       where address = ${campaign}`.execute(test.database)
   ).rows[0];
 
-const slots = async (campaign: string, kind: 'anchor' | 'open', ids: number[]) => {
-  for (const id of ids) {
-    await sql`insert into public.slots (campaign_address, slot_id, kind, status)
-      values (${campaign}, ${id}, ${kind}, ${kind})`.execute(test.database);
-  }
+// The indexer writes a slot row only once the slot is claimed or assigned (SlotsClaimed, AnchorSlotsAssigned).
+const takenSlot = async (
+  campaign: string,
+  slotId: number,
+  kind: 'anchor' | 'open',
+  status: string,
+) => {
+  await sql`insert into public.slots (campaign_address, slot_id, kind, status, planter_address)
+    values (${campaign}, ${slotId}, ${kind}, ${status}::public.slot_status, ${PLANTER.toLowerCase()})`.execute(
+    test.database,
+  );
 };
 
 /** The six campaigns, and the anchor and open slots the assignments count. */
@@ -80,22 +86,24 @@ const theCampaigns = async (): Promise<void> => {
     address: ROOTS,
     ...active,
     tree_target: 9,
-    anchor_slots: 3,
-    open_slots: 6,
+    anchor_slots: 4,
+    open_slots: 5,
   });
   await aCampaign(test.database, { address: FUNDING, species_code: 'SWIETENIA_MACROPHYLLA' });
   await aCampaign(test.database, {
     address: PAST_DEADLINE,
     ...active,
     claim_deadline: new Date('2026-10-01T00:00:00Z'),
+    tree_target: 5,
+    anchor_slots: 3,
+    open_slots: 2,
   });
   await aCampaign(test.database, { address: NO_SPECIES, status: 'active' });
   await aCampaign(test.database, { address: LOCKED, ...active });
   await aCampaign(test.database, { address: COMPLETED, ...active, status: 'completed' });
-  await slots(ROOTS, 'anchor', [1, 2, 3]);
-  await slots(ROOTS, 'open', [4, 5]);
-  await slots(PAST_DEADLINE, 'anchor', [1, 2, 3]);
-  await slots(PAST_DEADLINE, 'open', [4, 5]);
+  // Roots: anchor 1 assigned, open slot 5 planted, so three anchors and four open slots are free
+  await takenSlot(ROOTS, 1, 'anchor', 'claimed');
+  await takenSlot(ROOTS, 5, 'open', 'planted');
 };
 
 beforeAll(async () => {
@@ -108,7 +116,7 @@ beforeAll(async () => {
   await theCampaigns();
   await sql`insert into public.trees (tree_id, campaign_address, slot_id, planter_address, planted_at, geohash,
       latest_evidence_hash, planted_tx, status)
-    values (4001, ${ROOTS}, 4, ${PLANTER.toLowerCase()}, now(), 'qqguw7p', ${TX_HASH}, ${TX_HASH}, 'removed')`.execute(
+    values (4001, ${ROOTS}, 5, ${PLANTER.toLowerCase()}, now(), 'qqguw7p', ${TX_HASH}, ${TX_HASH}, 'removed')`.execute(
     test.database,
   );
   await sql`insert into public.carbon_batches (batch_id, campaign_address, amount, registry, serial_start,

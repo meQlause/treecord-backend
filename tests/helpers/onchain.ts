@@ -118,6 +118,23 @@ export const waitFor = async <Row>(
   }
 };
 
+/** Both answers to a double submit: one 202 and one 200 replay, naming the same job (ADR-009). */
+export const oneJob = (responses: { status: number; body: { job: { id: string } } }[]): string => {
+  const [first, second] = responses;
+
+  expect(responses.map(({ status }) => status).sort()).toEqual([200, 202]);
+  expect(first?.body.job.id).toBe(second?.body.job.id);
+
+  return first?.body.job.id ?? '';
+};
+
+/** Waits for the worker to confirm a job on chain; its transaction hash. */
+export const confirmed = (stack: Onchain, jobId: string) =>
+  waitFor(`job ${jobId} confirmed`, () =>
+    stack.row(sql<{ tx_hash: string }>`select tx_hash from public.relayer_jobs
+      where id = ${jobId} and status = 'confirmed'`),
+  );
+
 /** A wallet on the stack's anvil for one of its keys. */
 export const walletOf = (stack: Pick<Onchain, 'chain'>, key: Hex) =>
   createWalletClient({

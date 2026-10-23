@@ -114,7 +114,7 @@ const CAMPAIGN = '0x00000000000000000000000000000000000000c1';
 const PLANTING_CAMPAIGN = '0x00000000000000000000000000000000000000c2';
 const PLANTER_WALLET = `0x${'2'.repeat(40)}`;
 const METADATA_ID = '7d5c9b8e-1f4a-4c2e-9a3b-6f0e2d1c4b5a';
-// an Active mahogany campaign with one unassigned anchor slot, for the operator actions
+// an Active mahogany campaign, its anchor slots all unassigned, for the operator actions
 const OPS_CAMPAIGN = '0x00000000000000000000000000000000000000c3';
 // an open flag on tree 3001, which every role's wallet contributed to
 const OPEN_FLAG_ID = '1f6c2a9e-4b7d-4e15-9a3c-8d2e5f0b7a61';
@@ -419,15 +419,13 @@ const carbonRecords = async (): Promise<void> => {
   );
 };
 
-// OPS_CAMPAIGN and its anchor slot; the species must be seeded first.
+// OPS_CAMPAIGN, no slot taken yet; the species must be seeded first.
 const operationsCampaign = async (): Promise<void> => {
   await aCampaign(test.database, {
     address: OPS_CAMPAIGN,
     status: 'active',
     species_code: 'SWIETENIA_MACROPHYLLA',
   });
-  await sql`insert into public.slots (campaign_address, slot_id, kind, status)
-    values (${OPS_CAMPAIGN}, 1, 'anchor', 'anchor')`.execute(test.database);
 };
 
 // One profile per role; roles past donor are granted by hand, as in production.

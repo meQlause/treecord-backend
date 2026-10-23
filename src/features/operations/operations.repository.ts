@@ -18,19 +18,23 @@ export const operationsRepository = (database: Kysely<DB>) => ({
       .forUpdate()
       .executeTakeFirst(),
 
-  /** §1 anchor: anchor slots not yet assigned, and open slots nobody claimed. */
+  /** §1 anchor: anchor slots not yet assigned, and open slots nobody claimed. The indexer writes a slot row only once
+   *  it is claimed or assigned (a rolled-over open slot keeps kind open), so both are the campaign's totals less the
+   *  rows of that kind. */
   slotCounts: (address: string) =>
     database
-      .selectFrom('slots')
+      .selectFrom('campaigns as c')
+      .leftJoin('slots as s', 's.campaign_address', 'c.address')
       .select([
-        sql<number>`(count(*) filter (where kind = 'anchor' and status = 'anchor'))::int`.as(
+        sql<number>`c.anchor_slots - (count(s.slot_id) filter (where s.kind = 'anchor'))::int`.as(
           'unassigned_anchors',
         ),
-        sql<number>`(count(*) filter (where kind = 'open' and status = 'open'))::int`.as(
+        sql<number>`c.open_slots - (count(s.slot_id) filter (where s.kind = 'open'))::int`.as(
           'open_unclaimed',
         ),
       ])
-      .where('campaign_address', '=', address)
+      .where('c.address', '=', address)
+      .groupBy(['c.anchor_slots', 'c.open_slots'])
       .executeTakeFirstOrThrow(),
 
   removedTrees: async (address: string): Promise<number> =>
