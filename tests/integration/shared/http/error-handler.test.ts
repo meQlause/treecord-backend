@@ -2,11 +2,10 @@ import express from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { createApp } from '../../../../src/app.js';
 import { DomainError, ERROR_REGISTRY } from '../../../../src/shared/errors.js';
 import { errorHandler, notFound } from '../../../../src/shared/http/error-handler.js';
-import { createLogger } from '../../../../src/shared/http/logger.js';
 import { requestId } from '../../../../src/shared/http/request-id.js';
+import { testApp } from '../../../helpers/app.js';
 
 // docs/error-handling.md §3 — one status per code, exactly these 40 codes.
 const REGISTRY = {
@@ -52,10 +51,7 @@ const REGISTRY = {
   service_unavailable: 503,
 };
 
-const readiness = { database: async () => undefined, chain: async () => undefined };
-
-const appWithLimit = () =>
-  createApp({ readiness, logger: createLogger('silent'), jsonBodyLimitKb: 1 });
+const appWithLimit = () => testApp({ jsonBodyLimitKb: 1 });
 
 const appThrowing = (error: unknown, logUnexpected = vi.fn()) =>
   express()
@@ -76,7 +72,7 @@ describe('error envelope — docs/error-handling.md §1–§3', () => {
   });
 
   it('an unknown route answers 404 not_found in the envelope', async () => {
-    const response = await request(appWithLimit()).get('/api/v1/nowhere').expect(404);
+    const response = await request(appWithLimit()).get('/nowhere').expect(404);
 
     expect(response.body).toEqual({
       error: {

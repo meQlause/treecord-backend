@@ -1,10 +1,8 @@
 import { Writable } from 'node:stream';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp } from '../../../../src/app.js';
 import { createLogger } from '../../../../src/shared/http/logger.js';
-
-const readiness = { database: async () => undefined, chain: async () => undefined };
+import { testApp } from '../../../helpers/app.js';
 
 const captured = () => {
   const lines: Record<string, unknown>[] = [];
@@ -17,7 +15,7 @@ const captured = () => {
 
   return {
     lines,
-    app: createApp({ readiness, logger: createLogger('info', stream), jsonBodyLimitKb: 64 }),
+    app: testApp({ logger: createLogger('info', stream) }),
   };
 };
 

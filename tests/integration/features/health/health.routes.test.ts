@@ -1,9 +1,8 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createApp } from '../../../../src/app.js';
 import { createDatabase, pingDatabase } from '../../../../src/shared/db/database.js';
-import { createLogger } from '../../../../src/shared/http/logger.js';
+import { testApp } from '../../../helpers/app.js';
 
 const CONTAINER_START_MS = 120_000;
 // The chain stays behind a fake in integration tests (docs/BE/testing.md §1).
@@ -32,11 +31,7 @@ describe('health and readiness — ADR-017', () => {
   }, CONTAINER_START_MS);
 
   const appWith = (chain: () => Promise<bigint>) =>
-    createApp({
-      readiness: { database: () => pingDatabase(database), chain },
-      logger: createLogger('silent'),
-      jsonBodyLimitKb: 64,
-    });
+    testApp({ readiness: { database: () => pingDatabase(database), chain } });
 
   afterAll(async () => {
     await database.destroy();
