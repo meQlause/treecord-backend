@@ -29,6 +29,9 @@ const reply = (res: Response, { status, body }: { status: number; body: object }
  *  and the key are checked before the body (README §5, §7). */
 export const operationsRouter = (operations: OperationsService): Router =>
   Router()
+    .get('/operator/campaigns/:address', operatorsOnly, async (req, res) => {
+      res.json(await operations.read(pathParam(addressParam, req.params.address)));
+    })
     .post('/operator/campaigns/:address/anchor-assignments', operatorsOnly, async (req, res) => {
       const address = pathParam(addressParam, req.params.address);
       const key = keyOf(req);

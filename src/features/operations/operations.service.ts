@@ -1,6 +1,7 @@
 import type { DatabaseClient, DatabaseTransaction } from '../../shared/db/database.js';
 import { DomainError } from '../../shared/errors.js';
 import { enqueue, enqueuedResponse, openSlotCounts } from '../jobs/index.js';
+import { toCampaignOperations } from './operations.mapper.js';
 import {
   availableAnchorSlots,
   ESTIMATE_FORMULA,
@@ -65,6 +66,64 @@ const estimateOf = async (
     species: { code: species.code, name: species.english_name },
   };
 };
+
+/** §1, FR-172–FR-177: the S27 read model. Chain time decides whether the claim deadline has passed (ADR-015, 503 when
+ *  it cannot be read); the preview is what §3 would compute now, from the same rule. */
+const readOf =
+  ({ database, chainNow }: OperationsDependencies) =>
+  async (address: string) => {
+    const repository = operationsRepository(database);
+    const campaign = await repository.campaignView(address);
+
+    if (campaign === undefined) {
+      throw new DomainError('not_found');
+    }
+
+    const species =
+      campaign.species_code === null ? undefined : await repository.species(campaign.species_code);
+    const [now, slots, queued, removedTrees, locked, queuedJobs] = await Promise.all([
+      chainNow(),
+      repository.slotCounts(address),
+      openSlotCounts(database, 'anchor_assign', address, null),
+      repository.removedTrees(address),
+      repository.hasBatch(address),
+      repository.queuedJobs(address),
+    ]);
+    const claimDeadlinePassed = now > campaign.claim_deadline;
+    const available = availableAnchorSlots({
+      unassignedAnchors: slots.unassigned_anchors,
+      openUnclaimed: slots.open_unclaimed,
+      queued: queued.total,
+      claimDeadlinePassed,
+    });
+
+    return toCampaignOperations({
+      campaign,
+      anchor: {
+        unassigned: slots.unassigned_anchors,
+        rolledOver: claimDeadlinePassed ? slots.open_unclaimed : null,
+        queued: queued.total,
+        available,
+      },
+      estimate: {
+        species,
+        preview:
+          species === undefined
+            ? undefined
+            : estimateCarbon({
+                kgCo2PerYearMature: species.est_kg_co2_per_year_mature,
+                yearsToMaturity: species.years_to_maturity,
+                treeCount: campaign.tree_target - removedTrees,
+                commitmentMonths: campaign.commitment_units,
+              }),
+        treeTarget: campaign.tree_target,
+        removedTrees,
+        commitmentMonths: campaign.commitment_units,
+        locked,
+      },
+      queuedJobs,
+    });
+  };
 
 /** §2, FR-173. */
 const assignAnchors =
@@ -158,6 +217,7 @@ export const createOperationsService = (dependencies: OperationsDependencies) =>
   const { database } = dependencies;
 
   return {
+    read: readOf(dependencies),
     assignAnchors: assignAnchors(dependencies),
     estimate: estimate(dependencies),
 

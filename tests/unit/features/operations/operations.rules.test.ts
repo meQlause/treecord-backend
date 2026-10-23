@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   availableAnchorSlots,
+  currentEstimate,
   estimateCarbon,
   tonnesToUnits,
 } from '../../../../src/features/operations/operations.rules.js';
@@ -84,5 +85,34 @@ describe('availableAnchorSlots', () => {
         claimDeadlinePassed: passed,
       }),
     ).toBe(available);
+  });
+});
+
+// §1, FR-174: "Not computed", the current estimate, and a method that is not the confirmed one.
+describe('currentEstimate', () => {
+  const METHOD = { model: 'linear-maturity-v1', amount: '54' };
+
+  it('is null until the chain confirmed an estimate', () => {
+    expect(currentEstimate(null, METHOD)).toBeNull();
+  });
+
+  it('carries the method that produced the confirmed amount', () => {
+    expect(currentEstimate('54', METHOD)).toEqual({
+      amount: '54',
+      label: 'pre-certification',
+      method: METHOD,
+    });
+  });
+
+  it.each([
+    ['a method of another amount: a newer run, queued or failed', { ...METHOD, amount: '60' }],
+    ['no method at all', null],
+    ['a method without an amount', { model: 'linear-maturity-v1' }],
+  ])('keeps the amount but not %s', (_case, method) => {
+    expect(currentEstimate('54', method)).toEqual({
+      amount: '54',
+      label: 'pre-certification',
+      method: null,
+    });
   });
 });

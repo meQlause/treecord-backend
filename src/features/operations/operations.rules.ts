@@ -61,6 +61,22 @@ export const tonnesToUnits = (tonnes: string): string => {
   ).toString();
 };
 
+/** §1, FR-174: "Not computed" until the chain confirmed an estimate. The method that produced it is shown only while
+ *  its amount is the confirmed one: a newer method describes a run still queued or failed (§3 note). */
+export const currentEstimate = (estimatedAmount: string | null, method: unknown) => {
+  if (estimatedAmount === null) {
+    return null;
+  }
+
+  const methodAmount = (method as { amount?: unknown } | null)?.amount;
+
+  return {
+    amount: estimatedAmount,
+    label: 'pre-certification',
+    method: methodAmount === estimatedAmount ? method : null,
+  };
+};
+
 /** §1, FR-173: unassigned anchors, plus open slots nobody claimed once chain time passes the claim deadline, less
  *  the anchor assignments already queued; never below 0. */
 export const availableAnchorSlots = ({

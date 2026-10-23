@@ -242,6 +242,11 @@ const MATRIX: AccessMatrix = {
     },
     ok: 202,
   },
+  'GET /operator/campaigns/:address': {
+    allowed: ['operator'],
+    probe: { method: 'get', path: `/api/v1/operator/campaigns/${OPS_CAMPAIGN}` },
+    ok: 200,
+  },
   'POST /operator/campaigns/:address/anchor-assignments': {
     allowed: ['operator'],
     probe: {

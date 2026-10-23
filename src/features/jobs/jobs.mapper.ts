@@ -3,7 +3,7 @@ import type { JobRow, StoredJob } from './jobs.repository.js';
 export type EnqueueOutcome = 'created' | 'replayed' | 'rearmed';
 
 /** README §7's Job: what an enqueuing endpoint answers. The raw payload never leaves the server. */
-const toJobSummary = (row: StoredJob) => ({
+export const toJobSummary = (row: StoredJob) => ({
   id: row.id,
   kind: row.kind,
   status: row.status,
