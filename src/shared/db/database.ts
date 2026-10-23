@@ -1,4 +1,4 @@
-import { Kysely, PostgresDialect, sql } from 'kysely';
+import { Kysely, PostgresDialect, sql, type Transaction } from 'kysely';
 import postgresDriver from 'pg';
 import type { DB } from '../../generated/db.js';
 
@@ -6,6 +6,9 @@ import type { DB } from '../../generated/db.js';
 type Database = DB;
 
 export type DatabaseClient = Kysely<Database>;
+
+/** What a service holds inside `database.transaction()` and passes to every repository it calls (be-architecture §6). */
+export type DatabaseTransaction = Transaction<Database>;
 
 type DatabaseOptions = {
   url: string;

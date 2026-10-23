@@ -1,5 +1,5 @@
-import { sql, type Kysely, type Selectable } from 'kysely';
-import type { DB, RelayerJobs } from '../../generated/db.js';
+import { sql, type Insertable, type Kysely, type Selectable } from 'kysely';
+import type { DB, Json, RelayerJobKind, RelayerJobs } from '../../generated/db.js';
 
 type JobContext = {
   context_campaign: string | null;
@@ -8,7 +8,13 @@ type JobContext = {
   context_submission_id: string | null;
 };
 
-export type JobRow = Selectable<RelayerJobs> & JobContext;
+export type StoredJob = Selectable<RelayerJobs>;
+
+export type JobKind = RelayerJobKind;
+
+export type JobPayload = Json;
+
+export type JobRow = StoredJob & JobContext;
 
 export const jobsRepository = (database: Kysely<DB>) => ({
   /** jobs §2: one job by id, with the campaign S12 links to, found through its batch or tree when the payload has none. */
@@ -38,6 +44,40 @@ export const jobsRepository = (database: Kysely<DB>) => ({
       ])
       .where('job.id', '=', id)
       .executeTakeFirst(),
+
+  /** jobs §3.2 R3: the unique key does the work; no row back means the key is taken. */
+  insertUnlessKeyTaken: (values: Insertable<RelayerJobs>): Promise<StoredJob | undefined> =>
+    database
+      .insertInto('relayer_jobs')
+      .values(values)
+      .onConflict((conflict) => conflict.column('idempotency_key').doNothing())
+      .returningAll()
+      .executeTakeFirst(),
+
+  /** R4: the job holding the key, locked so two repeats of a failed job cannot both re-arm it. */
+  lockByKey: (key: string): Promise<StoredJob> =>
+    database
+      .selectFrom('relayer_jobs')
+      .selectAll()
+      .where('idempotency_key', '=', key)
+      .forUpdate()
+      .executeTakeFirstOrThrow(),
+
+  /** R5: back to pending with the new payload; tx_hash and last_error stay so the worker checks the earlier send. */
+  rearm: (id: string, payload: JobPayload): Promise<StoredJob> =>
+    database
+      .updateTable('relayer_jobs')
+      .set({
+        status: 'pending',
+        payload,
+        attempts: 0,
+        next_attempt_at: sql<Date>`now()`,
+        locked_at: null,
+        locked_by: null,
+      })
+      .where('id', '=', id)
+      .returningAll()
+      .executeTakeFirstOrThrow(),
 });
 
 export type JobsRepository = ReturnType<typeof jobsRepository>;
