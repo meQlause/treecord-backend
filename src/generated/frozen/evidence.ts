@@ -31,6 +31,8 @@ export interface EvidencePayload {
   challenge: string | null;
   /** RFC 7638 thumbprint of the device public key. */
   deviceKey: string;
+  /** The issued tree tag (FR-089), the last key. Absent in payloads signed before tags existed, which still verify. */
+  tag?: string | null;
 }
 
 /** A P-256 public key as JWK. Private members are never included. */
@@ -76,6 +78,8 @@ export function canonicalize(payload: EvidencePayload): string {
       `"capturedAt":${JSON.stringify(payload.capturedAt)}`,
       `"challenge":${nullableString(payload.challenge)}`,
       `"deviceKey":${JSON.stringify(payload.deviceKey)}`,
+      // NFR-043: the tag rides last, and only when the payload has one
+      ...(payload.tag === undefined ? [] : [`"tag":${nullableString(payload.tag)}`]),
     ].join(",") +
     "}"
   );

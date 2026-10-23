@@ -1,6 +1,6 @@
 {
   "sourceRepo": "treecord-backend",
-  "sourceCommit": "4a4331e46ecad97eb2f833f39acb6ee09c97dc91",
+  "sourceCommit": "f0078d2356c59822b335dcbb21134b2aeb2cf95b",
   "files": {
     "migrations/101_20261016120000_core.sql": {
       "source": "supabase/migrations/20261016120000_core.sql",
@@ -72,7 +72,7 @@
     },
     "src/generated/frozen/ai.ts": {
       "source": "packages/shared/src/ai.ts",
-      "sha256": "c4111409f262ce15c009788d4e28db8a37aaf8dcf822f2543c13b8a752eb7cb1"
+      "sha256": "2441066bd4a9ea46a6b63e46e460604ea1e806ae03547584364a0b58370a0943"
     },
     "src/generated/frozen/constants.ts": {
       "source": "packages/shared/src/constants.ts",
@@ -84,7 +84,7 @@
     },
     "src/generated/frozen/evidence.ts": {
       "source": "packages/shared/src/evidence.ts",
-      "sha256": "8e8cc1fac1aa84060a2f2f87eff0d0fc7eb3347c5b0f98a44dd0c5a18b8711b6"
+      "sha256": "fd0ef2d0c877ca201cda25639996aef2bd27c8edacf9948c5f60b5eef2df0b1b"
     },
     "src/generated/frozen/jobs.ts": {
       "source": "packages/shared/src/jobs.ts",
@@ -92,11 +92,11 @@
     },
     "src/generated/frozen/policy.ts": {
       "source": "packages/shared/src/policy.ts",
-      "sha256": "8091bafec127e55ba3a16f5a44f048f2fec1011764d64fbb40e95741c630ad8d"
+      "sha256": "2c56f280d3001707b5c3ed7700ba545ca3d7f56e0b320369510d3a6f2aafc102"
     },
     "src/generated/frozen/schemas.ts": {
       "source": "packages/shared/src/schemas.ts",
-      "sha256": "64c637a3a9f9fe31ec6d878a9394573b3885de86bbe742a6c00c0e601b3b7dae"
+      "sha256": "5abd7db8de178ad76d8a8c50d2bfb7d599ed2d74bca272dcf73ebef848bdc840"
     }
   }
 }

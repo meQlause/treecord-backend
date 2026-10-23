@@ -136,6 +136,12 @@ export const evidencePayloadSchema = z
     capturedAt: isoTimestampMsSchema,
     challenge: z.string().min(1).max(32).nullable(),
     deviceKey: jwkThumbprintSchema,
+    // FR-089: the issued tree tag, alphabet of data-spec 5.2.1 (no I, L, O, 0, 1). Optional for old payloads.
+    tag: z
+      .string()
+      .regex(/^TC-[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/)
+      .nullable()
+      .optional(),
   })
   .strict()
   .superRefine(checkKindShape);

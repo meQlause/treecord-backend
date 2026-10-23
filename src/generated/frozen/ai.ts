@@ -45,6 +45,9 @@ export const aiScoreResponseSchema = z.object({
     }),
     /** Null when no challenge was issued. */
     challengeVisible: unitScore.nullable(),
+    /** The tree tag QR read from the video (FR-145), null when unreadable. A service without tag decoding omits it,
+     *  which reads as null: an unread tag rejects a tagged submission (FR-149, ADR-006). */
+    tagDecoded: z.string().nullable().default(null),
     /** Advisory only in the MVP. */
     ndvi: z
       .object({

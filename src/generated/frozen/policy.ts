@@ -18,6 +18,8 @@ export interface PolicyContext {
   kind: EvidenceKind;
   /** True when an auditor challenge was active for this submission. */
   challengeIssued: boolean;
+  /** The tree tag in the signed payload (FR-089). Undefined or null: the payload carries none. */
+  tag?: string | null | undefined;
 }
 
 /**
@@ -80,6 +82,11 @@ export function applyPolicy(scores: AiScores, context: PolicyContext): PolicyRes
     } else {
       higherIsBetter(scores.challengeVisible, t.challengeVisible, "challenge", rejects, reviews);
     }
+  }
+
+  // FR-149: a tag is read or it is not, so there is no borderline band
+  if (typeof context.tag === "string" && scores.tagDecoded !== context.tag) {
+    rejects.push("tag_not_seen");
   }
 
   const growth =
