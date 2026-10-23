@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { asFunction, asValue, createContainer, InjectionMode, type AwilixContainer } from 'awilix';
 import type { Router } from 'express';
 import type { Logger } from 'pino';
@@ -14,6 +15,8 @@ import { carbonHoldingsRouter, carbonPublicRouter } from './features/carbon/inde
 import { registerDevices, type DevicesCradle } from './features/devices/devices.container.js';
 import { devicesRouter } from './features/devices/index.js';
 import { registerDonor, type DonorCradle } from './features/donor/donor.container.js';
+import { planterRouter } from './features/planter/index.js';
+import { registerPlanter, type PlanterCradle } from './features/planter/planter.container.js';
 import { donorRouter } from './features/donor/index.js';
 import { accountsRouter } from './features/accounts/index.js';
 import { registerJobs, type JobsCradle } from './features/jobs/jobs.container.js';
@@ -48,6 +51,8 @@ type SharedCradle = {
   /** The server clock; injected so tests fix it (SR-1). */
   clock: () => Date;
   storage: Storage;
+  /** CSPRNG bytes for codes the API issues (NFR-052). */
+  randomBytes: (count: number) => Uint8Array;
   verifyToken: TokenVerifier;
   walletOf: (privyUserId: string) => Promise<string | null>;
 };
@@ -61,7 +66,8 @@ export type Cradle = SharedCradle &
   ReportsCradle &
   CarbonCradle &
   DonorCradle &
-  DevicesCradle;
+  DevicesCradle &
+  PlanterCradle;
 
 /** The composition root: shared singletons, then each feature's register(). */
 export const createRootContainer = (config: Config): AwilixContainer<Cradle> => {
@@ -88,6 +94,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
     chainNow: asFunction(({ chain }: Cradle) => chainClock(chain)).singleton(),
     blockTime: asFunction(({ chain }: Cradle) => blockTime(chain)).singleton(),
     clock: asValue(() => new Date()),
+    randomBytes: asValue((count: number) => new Uint8Array(randomBytes(count))),
     storage: asFunction(({ config: settings }: Cradle) => createStorage(settings)).singleton(),
     verifyToken: asFunction(({ config: settings }: Cradle) =>
       privyVerifier({ appId: settings.PRIVY_APP_ID, resolveKey: privyJwks(settings.PRIVY_APP_ID) }),
@@ -108,6 +115,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
   registerCarbon(container);
   registerDonor(container);
   registerDevices(container);
+  registerPlanter(container);
 
   return container;
 };
@@ -138,10 +146,12 @@ export const privateRouters = ({
   carbonService,
   donorService,
   devicesService,
+  planterService,
 }: Cradle): Router[] => [
   accountsRouter(accountsService),
   jobsRouter(jobsService),
   carbonHoldingsRouter(carbonService),
   donorRouter(donorService),
   devicesRouter(devicesService),
+  planterRouter(planterService),
 ];

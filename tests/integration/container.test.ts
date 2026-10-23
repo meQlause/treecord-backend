@@ -154,6 +154,26 @@ const MATRIX: AccessMatrix = {
     ok: 200,
     foreign: () => deviceOf('other'),
   },
+  'GET /planter/trees': {
+    allowed: ['planter'],
+    probe: { method: 'get', path: '/api/v1/planter/trees' },
+    ok: 200,
+  },
+  'GET /planter/slots': {
+    allowed: ['planter'],
+    probe: { method: 'get', path: '/api/v1/planter/slots' },
+    ok: 200,
+  },
+  'GET /planter/challenges': {
+    allowed: ['planter'],
+    probe: { method: 'get', path: '/api/v1/planter/challenges' },
+    ok: 200,
+  },
+  'GET /planter/uploads': {
+    allowed: ['planter'],
+    probe: { method: 'get', path: '/api/v1/planter/uploads' },
+    ok: 200,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
