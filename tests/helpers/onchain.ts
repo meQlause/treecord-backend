@@ -6,6 +6,7 @@ import { sql } from 'kysely';
 import request from 'supertest';
 import {
   createPublicClient,
+  createTestClient,
   createWalletClient,
   http,
   parseEventLogs,
@@ -47,6 +48,7 @@ type LocalChain = {
     campaignFactory: Address;
     usdc: Address;
     treeRegistry: Address;
+    carbonLedger: Address;
     verificationGateway: Address;
   };
   stop: () => Promise<void>;
@@ -363,4 +365,124 @@ export const submitAndLand = async (
     }>`select tx_hash, tree_id::text from public.submissions
       where id = ${submissionId} and status = 'onchain'`),
   );
+};
+
+/** A planter of the stack: their phone (device key) and their sign-in. */
+export type StackPlanter = { phone: Phone; userId: string };
+
+// the mock AI scores liveness 0.75 for a payload carrying this challenge, which the policy sends to review
+// (ai-client.ts MOCK_AI_HOOKS); no challenge is open, so the API's challenge check passes whatever is carried
+const REVIEW_CHALLENGE = 'REVIEW-LIVENESS';
+
+/** The planter claims one open slot (slot 3, the first after the two anchors) through the API; its tag once the
+ *  indexer mirrors the slot and the slot list issues the tag. */
+export const claimedTag = async (
+  stack: Onchain,
+  planter: StackPlanter,
+  campaign: Address,
+): Promise<string> => {
+  const claimed = await request(stack.api.app)
+    .post(`/api/v1/campaigns/${campaign}/claims`)
+    .set(await stack.api.signedIn(planter.userId))
+    .send({ count: 1 });
+
+  await confirmed(stack, claimed.body.job.id as string);
+  await waitFor('the claimed slot', () =>
+    stack.row(sql`select 1 from public.slots where campaign_address = ${campaign} and slot_id = 3`),
+  );
+
+  const slots = await request(stack.api.app)
+    .get('/api/v1/planter/slots')
+    .set(await stack.api.signedIn(planter.userId));
+
+  return slots.body.items[0].tag.code as string;
+};
+
+/** Plants slot 3 and moves chain time into the tree's month-3 window; the tree id. */
+export const plantedTree = async (
+  stack: Onchain,
+  planter: StackPlanter,
+  campaign: Address,
+  tag: string,
+): Promise<string> => {
+  await submitAndLand(
+    stack,
+    planter,
+    { kind: 'PLANTED', campaign, slotId: '3', milestone: 0, contentType: 'video/mp4' },
+    {
+      v: 1,
+      kind: 'PLANTED',
+      campaign,
+      slotId: '3',
+      treeId: null,
+      milestone: 0,
+      ...JAKARTA,
+      acc: 6,
+      challenge: null,
+      tag,
+      capturedAt: new Date().toISOString(),
+    },
+  );
+
+  const tree = await waitFor('the planted tree', () =>
+    stack.row(
+      sql<{
+        tree_id: string;
+        planted_at: Date;
+      }>`select tree_id::text, planted_at from public.trees where campaign_address = ${campaign} and slot_id = 3`,
+    ),
+  );
+  const anvil = createTestClient({
+    chain: foundry,
+    mode: 'anvil',
+    transport: http(stack.chain.rpcUrl),
+  });
+
+  await anvil.setNextBlockTimestamp({
+    timestamp: BigInt(Math.floor(tree.planted_at.getTime() / 1000)) + 3n * TIME_UNIT + 5n,
+  });
+  await anvil.mine({ blocks: 1 });
+
+  return tree.tree_id;
+};
+
+/** Submits the month-3 check-in carrying the review hook; its id once the worker sends it to review. */
+export const checkInForReview = async (
+  stack: Onchain,
+  planter: StackPlanter,
+  { campaign, treeId, tag }: { campaign: Address; treeId: string; tag: string },
+): Promise<string> => {
+  const video = randomBytes(256);
+  const submissionId = await planter.phone.record(
+    { kind: 'ALIVE', campaign, treeId, milestone: 1, contentType: 'video/mp4' },
+    video,
+  );
+  const signed = await planter.phone.sign({
+    v: 1,
+    kind: 'ALIVE',
+    campaign,
+    slotId: null,
+    treeId,
+    milestone: 1,
+    ...JAKARTA,
+    acc: 6,
+    challenge: REVIEW_CHALLENGE,
+    tag,
+    capturedAt: new Date().toISOString(),
+    videoSha256: sha256Hex(video),
+    deviceKey: planter.phone.deviceKey,
+  });
+  const submitted = await request(stack.api.app)
+    .post(`/api/v1/evidence/${submissionId}/submit`)
+    .set(await stack.api.signedIn(planter.userId))
+    .send(signed);
+
+  expect(submitted.status).toBe(202);
+  await waitFor('the check-in in review', () =>
+    stack.row(
+      sql`select 1 from public.submissions where id = ${submissionId} and status = 'needs_review'`,
+    ),
+  );
+
+  return submissionId;
 };
