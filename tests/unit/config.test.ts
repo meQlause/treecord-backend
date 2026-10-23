@@ -43,12 +43,30 @@ describe('config — NFR-008: refuse to start with a missing or malformed variab
     ['WEB_ORIGIN', '*'],
     ['DEMO_WALLET_AUTH', 'yes'],
     ['LOG_LEVEL', 'loud'],
+    ['JSON_BODY_LIMIT_KB', '0'],
+    ['DATABASE_STATEMENT_TIMEOUT_MS', '5s'],
+    ['RPC_TIMEOUT_MS', '-1'],
+    ['S3_TIMEOUT_MS', 'fast'],
+    ['SHUTDOWN_GRACE_MS', '1.5'],
   ])('fails naming %s when it is malformed', (name, value) => {
     expect(() => loadConfig({ ...VALID, [name]: value })).toThrow(name);
   });
 
   it('keeps the demo wallet sign-in off and logs at info unless set (ADR-007)', () => {
     expect(loadConfig(VALID)).toMatchObject({ DEMO_WALLET_AUTH: false, LOG_LEVEL: 'info' });
+  });
+
+  it('takes the D-6 resource limits as configuration, defaulting to the planned values', () => {
+    expect(loadConfig(VALID)).toMatchObject({
+      JSON_BODY_LIMIT_KB: 64,
+      DATABASE_STATEMENT_TIMEOUT_MS: 5000,
+      RPC_TIMEOUT_MS: 10_000,
+      S3_TIMEOUT_MS: 15_000,
+      SHUTDOWN_GRACE_MS: 10_000,
+    });
+    expect(
+      loadConfig({ ...VALID, DATABASE_STATEMENT_TIMEOUT_MS: '2500' }).DATABASE_STATEMENT_TIMEOUT_MS,
+    ).toBe(2500);
   });
 
   it('reads DEMO_WALLET_AUTH=true as on', () => {

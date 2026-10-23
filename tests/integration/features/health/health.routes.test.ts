@@ -26,6 +26,7 @@ describe('health and readiness — ADR-017', () => {
     database = createDatabase({
       url: postgres.getConnectionUri(),
       poolMax: 2,
+      timeoutMs: 5_000,
       onIdleError: (error) => idleErrors.push(error),
     });
   }, CONTAINER_START_MS);
@@ -34,6 +35,7 @@ describe('health and readiness — ADR-017', () => {
     createApp({
       readiness: { database: () => pingDatabase(database), chain },
       logger: createLogger('silent'),
+      jsonBodyLimitKb: 64,
     });
 
   afterAll(async () => {

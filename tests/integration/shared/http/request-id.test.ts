@@ -15,7 +15,10 @@ const captured = () => {
     },
   });
 
-  return { lines, app: createApp({ readiness, logger: createLogger('info', stream) }) };
+  return {
+    lines,
+    app: createApp({ readiness, logger: createLogger('info', stream), jsonBodyLimitKb: 64 }),
+  };
 };
 
 const requestIdOf = (line: Record<string, unknown>): unknown =>

@@ -54,6 +54,9 @@ const REGISTRY = {
 
 const readiness = { database: async () => undefined, chain: async () => undefined };
 
+const appWithLimit = () =>
+  createApp({ readiness, logger: createLogger('silent'), jsonBodyLimitKb: 1 });
+
 const appThrowing = (error: unknown, logUnexpected = vi.fn()) =>
   express()
     .use(requestId)
@@ -73,9 +76,7 @@ describe('error envelope — docs/error-handling.md §1–§3', () => {
   });
 
   it('an unknown route answers 404 not_found in the envelope', async () => {
-    const response = await request(createApp({ readiness, logger: createLogger('silent') }))
-      .get('/api/v1/nowhere')
-      .expect(404);
+    const response = await request(appWithLimit()).get('/api/v1/nowhere').expect(404);
 
     expect(response.body).toEqual({
       error: {
@@ -124,5 +125,24 @@ describe('error envelope — docs/error-handling.md §1–§3', () => {
     });
     expect(JSON.stringify(response.body)).not.toMatch(/profiles|Parser|stack/);
     expect(logUnexpected).toHaveBeenCalledWith(leak, response.body.error.requestId);
+  });
+
+  it('a body that is not JSON answers 400 invalid_json', async () => {
+    const response = await request(appWithLimit())
+      .post('/api/v1/anything')
+      .set('Content-Type', 'application/json')
+      .send('{"kind": ')
+      .expect(400);
+
+    expect(response.body.error.code).toBe('invalid_json');
+  });
+
+  it('a body over the JSON limit answers 400 validation_error, never 500 (D-6)', async () => {
+    const response = await request(appWithLimit())
+      .post('/api/v1/anything')
+      .send({ padding: 'x'.repeat(2048) })
+      .expect(400);
+
+    expect(response.body.error.code).toBe('validation_error');
   });
 });

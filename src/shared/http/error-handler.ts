@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler, Response } from 'express';
 import { ZodError } from 'zod';
+import { isDatabaseUnavailable } from '../db/database.js';
 import { DomainError, ERROR_REGISTRY, type ErrorCode, type ErrorDetails } from '../errors.js';
 
 const PLACEHOLDER = /\{(\w+)\}/g;
@@ -38,26 +39,52 @@ type ErrorHandlerOptions = {
   logUnexpected: (error: unknown, requestId: string) => void;
 };
 
+type Outcome = { code: ErrorCode; details?: ErrorDetails; log?: true };
+
+// express.json() failures, by the type body-parser sets (be-architecture §5 row 4).
+const BODY_ERRORS: Readonly<Record<string, Outcome>> = {
+  'entity.parse.failed': { code: 'invalid_json' },
+  // phases.md D-6: the registry has no 413; an oversized body is a body that fails its schema
+  'entity.too.large': {
+    code: 'validation_error',
+    details: [{ path: '', message: 'Request body is larger than the JSON limit' }],
+  },
+};
+
+// The first matcher that recognises the error decides the response (a lookup, conventions §4).
+const MATCHERS: ReadonlyArray<(error: unknown) => Outcome | undefined> = [
+  (error) =>
+    error instanceof DomainError
+      ? { code: error.code, ...(error.details && { details: error.details }) }
+      : undefined,
+  (error) =>
+    error instanceof ZodError
+      ? {
+          code: 'validation_error',
+          details: error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
+          })),
+        }
+      : undefined,
+  (error) => BODY_ERRORS[String((error as { type?: unknown } | null)?.type)],
+  // ADR-010: a dependency down or timed out
+  (error) =>
+    isDatabaseUnavailable(error) ? { code: 'service_unavailable', log: true } : undefined,
+];
+
 /** be-architecture §5 row 10, mounted last: the one place a status is chosen. */
 export const errorHandler =
   ({ logUnexpected }: ErrorHandlerOptions): ErrorRequestHandler =>
   (error: unknown, _req, res, _next) => {
-    if (error instanceof DomainError) {
-      send(res, error.code, error.details);
+    const outcome = MATCHERS.map((match) => match(error)).find((found) => found !== undefined) ?? {
+      code: 'internal_error',
+      log: true,
+    };
 
-      return;
+    if (outcome.log) {
+      logUnexpected(error, res.locals['requestId']);
     }
 
-    if (error instanceof ZodError) {
-      send(
-        res,
-        'validation_error',
-        error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
-      );
-
-      return;
-    }
-
-    logUnexpected(error, res.locals['requestId']);
-    send(res, 'internal_error');
+    send(res, outcome.code, outcome.details);
   };

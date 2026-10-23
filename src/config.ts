@@ -5,6 +5,15 @@ const MAX_PORT = 65_535;
 const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 
+// docs/phases.md D-6: resource limits are configuration; these are the planned values when unset.
+const PLANNED_LIMITS = {
+  jsonBodyLimitKb: 64,
+  statementTimeoutMs: 5_000,
+  rpcTimeoutMs: 10_000,
+  s3TimeoutMs: 15_000,
+  shutdownGraceMs: 10_000,
+};
+
 const positiveInt = z.coerce.number().int().positive();
 const httpUrl = z.url({ protocol: /^https?$/ });
 
@@ -29,6 +38,11 @@ const configSchema = z.object({
     .default('false')
     .transform((value) => value === 'true'),
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
+  JSON_BODY_LIMIT_KB: positiveInt.default(PLANNED_LIMITS.jsonBodyLimitKb),
+  DATABASE_STATEMENT_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.statementTimeoutMs),
+  RPC_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.rpcTimeoutMs),
+  S3_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.s3TimeoutMs),
+  SHUTDOWN_GRACE_MS: positiveInt.default(PLANNED_LIMITS.shutdownGraceMs),
 });
 
 export type Config = z.infer<typeof configSchema>;

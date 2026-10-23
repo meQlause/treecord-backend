@@ -10,11 +10,13 @@ const logger = createLogger(config.LOG_LEVEL);
 const database = createDatabase({
   url: config.DATABASE_URL,
   poolMax: config.DATABASE_POOL_MAX,
+  timeoutMs: config.DATABASE_STATEMENT_TIMEOUT_MS,
   onIdleError: (error) => logger.warn({ err: error }, 'postgres idle connection dropped'),
 });
-const chain = createChainClient(config.RPC_URL);
+const chain = createChainClient(config.RPC_URL, config.RPC_TIMEOUT_MS);
 
 createApp({
   readiness: { database: () => pingDatabase(database), chain: () => chain.getBlockNumber() },
   logger,
+  jsonBodyLimitKb: config.JSON_BODY_LIMIT_KB,
 }).listen(config.PORT);
