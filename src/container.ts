@@ -12,6 +12,8 @@ import { campaignsRouter } from './features/campaigns/index.js';
 import { accountsRouter } from './features/accounts/index.js';
 import { registerJobs, type JobsCradle } from './features/jobs/jobs.container.js';
 import { jobsRouter } from './features/jobs/index.js';
+import { reportsRouter } from './features/reports/index.js';
+import { registerReports, type ReportsCradle } from './features/reports/reports.container.js';
 import { registerTrees, type TreesCradle } from './features/trees/trees.container.js';
 import { treesRouter } from './features/trees/index.js';
 import {
@@ -43,7 +45,12 @@ type SharedCradle = {
 };
 
 /** Every registration; a misspelt dependency name is a compile error (SR-1). */
-export type Cradle = SharedCradle & AccountsCradle & JobsCradle & CampaignsCradle & TreesCradle;
+export type Cradle = SharedCradle &
+  AccountsCradle &
+  JobsCradle &
+  CampaignsCradle &
+  TreesCradle &
+  ReportsCradle;
 
 /** The composition root: shared singletons, then each feature's register(). */
 export const createRootContainer = (config: Config): AwilixContainer<Cradle> => {
@@ -85,6 +92,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
   registerJobs(container);
   registerCampaigns(container);
   registerTrees(container);
+  registerReports(container);
 
   return container;
 };
@@ -103,6 +111,7 @@ export const publicRouters = (cradle: Cradle): Router[] => {
   return [
     campaignsRouter(cradle.campaignsService, signedInIfToken),
     treesRouter(cradle.treesService, signedInIfToken),
+    reportsRouter(cradle.reportsService),
   ];
 };
 

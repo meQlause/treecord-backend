@@ -58,6 +58,18 @@ const MATRIX: AccessMatrix = {
     probe: { method: 'get', path: `/api/v1/trees/${TREE_ID}` },
     ok: 200,
   },
+  'GET /reports/campaign/:address': {
+    public: true,
+    allowed: ROLES,
+    probe: { method: 'get', path: `/api/v1/reports/campaign/${CAMPAIGN}` },
+    ok: 200,
+  },
+  'GET /reports/campaign/:address/evidence': {
+    public: true,
+    allowed: ROLES,
+    probe: { method: 'get', path: `/api/v1/reports/campaign/${CAMPAIGN}/evidence` },
+    ok: 200,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,

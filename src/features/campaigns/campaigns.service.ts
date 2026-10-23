@@ -7,7 +7,7 @@ import {
   type Viewer,
 } from './campaigns.mapper.js';
 import type { CampaignsRepository } from './campaigns.repository.js';
-import { decodeCursor, encodeCursor } from './campaigns.rules.js';
+import { decodeCampaignCursor, encodeCampaignCursor } from './campaigns.rules.js';
 import type { ListCampaignsQuery } from './campaigns.schema.js';
 
 type CampaignsDependencies = {
@@ -33,7 +33,7 @@ export const createCampaignsService = ({
 
   return {
     list: async ({ cursor, limit, ...filters }: ListCampaignsQuery) => {
-      const after = cursor === undefined ? null : decodeCursor(cursor);
+      const after = cursor === undefined ? null : decodeCampaignCursor(cursor);
       const [rows, total, shownAt] = await Promise.all([
         repository.page(filters, after, limit + 1),
         repository.count(filters),
@@ -46,7 +46,7 @@ export const createCampaignsService = ({
         items: items.map((row) => toCampaignCard(row, shownAt)),
         nextCursor:
           rows.length > limit && last !== undefined
-            ? encodeCursor({ block: last.created_block, address: last.address })
+            ? encodeCampaignCursor({ block: last.created_block, address: last.address })
             : null,
         total,
       };

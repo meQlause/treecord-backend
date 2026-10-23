@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { DomainError } from '../../shared/errors.js';
+import { pathParam } from '../../shared/http/params.js';
 import { toJobDto } from './jobs.mapper.js';
 import type { createJobsService } from './jobs.service.js';
 
@@ -12,14 +12,8 @@ const jobId = z.uuid();
 /** Private routes, mounted under /api/v1 behind authentication (jobs §2). */
 export const jobsRouter = (jobs: JobsService): Router =>
   Router().get('/jobs/:id', async (req, res) => {
-    const id = jobId.safeParse(req.params.id);
-
-    if (!id.success) {
-      throw new DomainError('invalid_path');
-    }
-
     const caller = res.locals['profile'] as Caller;
-    const job = await jobs.jobFor(caller, id.data);
+    const job = await jobs.jobFor(caller, pathParam(jobId, req.params.id));
 
     // polled while it changes (FR-027)
     res

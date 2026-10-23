@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   budget,
   daysLeft,
-  decodeCursor,
-  encodeCursor,
+  decodeCampaignCursor,
+  encodeCampaignCursor,
   fundingDeadlinePassed,
   openAvailable,
   progressBps,
@@ -111,7 +111,10 @@ describe('openAvailable and remainingCap', () => {
 describe('the list cursor', () => {
   it("encodes the last row's block and address as the §1 example does", () => {
     expect(
-      encodeCursor({ block: '29104480', address: '0x0000000000000000000000000000000000000002' }),
+      encodeCampaignCursor({
+        block: '29104480',
+        address: '0x0000000000000000000000000000000000000002',
+      }),
     ).toBe(
       'eyJiIjoiMjkxMDQ0ODAiLCJhIjoiMHgwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAyIn0',
     );
@@ -120,7 +123,7 @@ describe('the list cursor', () => {
   it('decodes what it encodes', () => {
     const position = { block: '29104480', address: '0x0000000000000000000000000000000000000002' };
 
-    expect(decodeCursor(encodeCursor(position))).toEqual(position);
+    expect(decodeCampaignCursor(encodeCampaignCursor(position))).toEqual(position);
   });
 
   it.each([
@@ -134,6 +137,8 @@ describe('the list cursor', () => {
       ),
     ],
   ])('refuses %s with invalid_cursor', (_case, cursor) => {
-    expect(() => decodeCursor(cursor)).toThrow(expect.objectContaining({ code: 'invalid_cursor' }));
+    expect(() => decodeCampaignCursor(cursor)).toThrow(
+      expect.objectContaining({ code: 'invalid_cursor' }),
+    );
   });
 });

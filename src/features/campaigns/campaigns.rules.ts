@@ -4,7 +4,7 @@ import {
   MILESTONE_DUE_UNITS,
   MILESTONE_SHARES_BPS,
 } from '../../generated/frozen/constants.js';
-import { DomainError } from '../../shared/errors.js';
+import { decodeCursor, encodeCursor } from '../../shared/http/cursor.js';
 
 // docs/BE/features/campaigns.md §1–§2: the integer maths every screen shares. Money stays a decimal string and is
 // computed as bigint, never a JS number (REG-001).
@@ -100,16 +100,12 @@ const cursorSchema = z.strictObject({
   a: z.string().regex(/^0x[0-9a-f]{40}$/),
 });
 
-/** §1 keyset cursor: the last row's (created_block, address), as opaque base64url JSON. */
-export const encodeCursor = ({ block, address }: CursorPosition): string =>
-  Buffer.from(JSON.stringify({ b: block, a: address })).toString('base64url');
+/** §1 keyset cursor: the last row's (created_block, address). */
+export const encodeCampaignCursor = ({ block, address }: CursorPosition): string =>
+  encodeCursor({ b: block, a: address });
 
-export const decodeCursor = (cursor: string): CursorPosition => {
-  try {
-    const { b, a } = cursorSchema.parse(JSON.parse(Buffer.from(cursor, 'base64url').toString()));
+export const decodeCampaignCursor = (cursor: string): CursorPosition => {
+  const { b, a } = decodeCursor(cursor, cursorSchema);
 
-    return { block: b, address: a };
-  } catch {
-    throw new DomainError('invalid_cursor');
-  }
+  return { block: b, address: a };
 };

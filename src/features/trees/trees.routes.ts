@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
-import { DomainError } from '../../shared/errors.js';
+import { pathParam } from '../../shared/http/params.js';
 import type { createTreesService } from './trees.service.js';
 
 type TreesService = ReturnType<typeof createTreesService>;
@@ -18,11 +18,7 @@ const treeIdSchema = z
  *  is sent, for the viewer and the exact location. */
 export const treesRouter = (trees: TreesService, signedInIfToken: RequestHandler): Router =>
   Router().get('/trees/:treeId', signedInIfToken, async (req, res) => {
-    const treeId = treeIdSchema.safeParse(req.params.treeId);
-
-    if (!treeId.success) {
-      throw new DomainError('invalid_path');
-    }
-
-    res.json(await trees.page(treeId.data, res.locals['profile'] as Caller));
+    res.json(
+      await trees.page(pathParam(treeIdSchema, req.params.treeId), res.locals['profile'] as Caller),
+    );
   });
