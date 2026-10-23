@@ -96,3 +96,42 @@ export const buildReport = ({
 
   return { report, notes, reportHash: reportHash(report) };
 };
+
+export type ChallengeRefusal =
+  | { code: 'session_closed' }
+  | { code: 'not_found' }
+  | { code: 'challenge_active'; details: { challengeId: string; expiresAt: string } }
+  | { code: 'tree_not_alive'; details: { status: string } };
+
+/** §6, FR-198, REG-007: the first refusal that applies, in the backend order: a closed session, a tree outside the
+ *  sample, an open challenge on the tree from any session, a tree that is not Alive; null when it may be issued. */
+export const challengeRefusal = ({
+  sessionStatus,
+  sampled,
+  openChallenge,
+  treeStatus,
+}: {
+  sessionStatus: string;
+  sampled: boolean;
+  openChallenge: { id: string; expiresAt: string } | null;
+  treeStatus: string;
+}): ChallengeRefusal | null => {
+  if (sessionStatus === 'closed') {
+    return { code: 'session_closed' };
+  }
+
+  if (!sampled) {
+    return { code: 'not_found' };
+  }
+
+  if (openChallenge !== null) {
+    return {
+      code: 'challenge_active',
+      details: { challengeId: openChallenge.id, expiresAt: openChallenge.expiresAt },
+    };
+  }
+
+  return treeStatus === 'alive'
+    ? null
+    : { code: 'tree_not_alive', details: { status: treeStatus } };
+};

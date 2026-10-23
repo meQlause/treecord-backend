@@ -4,6 +4,7 @@ import { pathParam } from '../../shared/http/params.js';
 import { allowRoles } from '../../shared/http/roles.js';
 import { validate } from '../../shared/http/validate.js';
 import {
+  challengeSchema,
   closeSchema,
   findingSchema,
   openSessionSchema,
@@ -57,4 +58,17 @@ export const auditRouter = (audit: AuditService): Router =>
       res.json(
         await audit.report(res.locals['profile'] as Auditor, pathParam(z.uuid(), req.params.id)),
       );
+    })
+    .post('/audit/sessions/:id/challenges', validate(challengeSchema), async (req, res) => {
+      const { treeId } = res.locals['body'] as { treeId: string };
+
+      res
+        .status(CREATED)
+        .json(
+          await audit.challenge(
+            res.locals['profile'] as Auditor,
+            pathParam(z.uuid(), req.params.id),
+            treeId,
+          ),
+        );
     });

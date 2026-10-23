@@ -31,3 +31,6 @@ export type FindingInput = z.infer<typeof findingSchema>;
 export const closeSchema = z.strictObject({
   summary: z.string().trim().max(MAX_TEXT).default(''),
 });
+
+/** §6 (FR-198): the sampled tree; the code and both instants are server-owned. */
+export const challengeSchema = z.strictObject({ treeId: treeIdParam });

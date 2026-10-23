@@ -315,3 +315,65 @@ describe('closing a session', () => {
     expect(foreign.body.error.code).toBe('not_found');
   });
 });
+
+// §6, FR-198, REG-007: the demo session samples 3001 (Alive), 3091 (Flagged) and 3104 (Alive).
+describe('issuing a challenge', () => {
+  const challenge = async (sessionId: string, treeId: string, userId = NADIA) =>
+    request(api.app)
+      .post(`/api/v1/audit/sessions/${sessionId}/challenges`)
+      .set(await api.signedIn(userId))
+      .send({ treeId });
+
+  it('a sampled Alive tree gets a 4-character code open for two time units (60 days): 201', async () => {
+    const response = await challenge(DEMO_AUDIT, '3001');
+    const { issuedAt, expiresAt } = response.body as { issuedAt: string; expiresAt: string };
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({
+      id: expect.any(String),
+      treeId: '3001',
+      code: expect.stringMatching(/^[A-Z0-9]{4}$/),
+      issuedAt: expect.any(String),
+      expiresAt: expect.any(String),
+      fulfilledSubmissionId: null,
+      status: 'open',
+    });
+    expect(Date.parse(expiresAt) - Date.parse(issuedAt)).toBe(2 * 2_592_000 * 1000);
+  });
+
+  it('refuses in the REG-007 order, each with its details', async () => {
+    const first = await sql<{
+      id: string;
+      expires_at: Date;
+    }>`select id, expires_at from public.challenges
+      where tree_id = 3001`.execute(test.database);
+    const active = await challenge(DEMO_AUDIT, '3001');
+
+    expect(active.body.error).toMatchObject({
+      code: 'challenge_active',
+      details: {
+        challengeId: first.rows[0]?.id,
+        expiresAt: first.rows[0]?.expires_at.toISOString(),
+      },
+    });
+    expect((await challenge(DEMO_AUDIT, '3091')).body.error).toMatchObject({
+      code: 'tree_not_alive',
+      details: { status: 'flagged' },
+    });
+    expect((await challenge(DEMO_AUDIT, '3020')).body.error.code).toBe('not_found');
+    // the closed session above: a Dead, unsampled tree still answers session_closed
+    expect((await challenge(id, '3103')).body.error.code).toBe('session_closed');
+    expect((await challenge(DEMO_AUDIT, '3104', OMAR)).body.error.code).toBe('not_found');
+  });
+
+  it('two challenges for one tree at once end in one 201 and one challenge_active', async () => {
+    const responses = await Promise.all([
+      challenge(DEMO_AUDIT, '3104'),
+      challenge(DEMO_AUDIT, '3104'),
+    ]);
+    const refused = responses.find(({ status }) => status === 409);
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
+    expect(refused?.body.error.code).toBe('challenge_active');
+  });
+});

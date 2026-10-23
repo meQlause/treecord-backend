@@ -1,10 +1,11 @@
+import { randomInt } from 'node:crypto';
 import { bytesToHex, type Hex } from 'viem';
 import { auditSeed, sampleTreeIds } from '../../generated/frozen/audit.js';
 import type { DatabaseClient } from '../../shared/db/database.js';
 import { DomainError } from '../../shared/errors.js';
-import { toSession } from './audit.mapper.js';
+import { toChallenge, toSession } from './audit.mapper.js';
 import { auditRepository, type SampleRow, type SessionRow } from './audit.repository.js';
-import { buildReport, missingFindings, type Finding } from './audit.rules.js';
+import { buildReport, challengeRefusal, missingFindings, type Finding } from './audit.rules.js';
 import type { FindingInput, OpenSessionInput } from './audit.schema.js';
 
 type Auditor = { id: string };
@@ -22,6 +23,15 @@ type AuditDependencies = {
 };
 
 const SALT_BYTES = 32;
+const CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const CODE_LENGTH = 4;
+const ONE_OPEN_PER_TREE = 'challenges_one_open_per_tree';
+
+/** §6, NFR-052: four characters, each drawn with crypto.randomInt, never Math.random; codes need not be unique. */
+const challengeCode = (): string =>
+  Array.from({ length: CODE_LENGTH }, () =>
+    CODE_ALPHABET.charAt(randomInt(CODE_ALPHABET.length)),
+  ).join('');
 
 /** §7, §8: the report body, read from what close stored and never rebuilt (FR-201); all null while open. */
 const storedReport = (session: SessionRow) => ({
@@ -163,12 +173,79 @@ const closeOf =
       return true;
     });
 
+/** §6: what a challenge is judged on, read under the session's lock. */
+const challengeFacts = async (
+  writes: ReturnType<typeof auditRepository>,
+  { id, treeId, status }: { id: string; treeId: string; status: string },
+) => {
+  const target = await writes.challengeTarget(id, treeId);
+  const open = await writes.openChallenge(treeId);
+
+  return {
+    sessionStatus: status,
+    sampled: target?.sampled ?? false,
+    openChallenge:
+      open === undefined ? null : { id: open.id, expiresAt: open.expires_at.toISOString() },
+    treeStatus: target?.status ?? 'unknown',
+  };
+};
+
+/** §6, FR-198: judged under the session's share lock in the REG-007 order, then inserted; the exclusion constraint
+ *  makes "one open challenge per tree" true when two arrive at once, and its 23P01 is re-read for the details. */
+const challengeOf =
+  ({ database, clock }: AuditDependencies) =>
+  async (auditor: Auditor, id: string, treeId: string) => {
+    try {
+      const row = await database.transaction().execute(async (trx) => {
+        const writes = auditRepository(trx);
+        const status = await writes.lockedStatus(id, auditor.id, 'share');
+
+        if (status === undefined) {
+          throw new DomainError('not_found');
+        }
+
+        const refusal = challengeRefusal(await challengeFacts(writes, { id, treeId, status }));
+
+        if (refusal !== null) {
+          throw new DomainError(refusal.code, 'details' in refusal ? refusal.details : undefined);
+        }
+
+        return writes.insertChallenge({
+          sessionId: id,
+          treeId,
+          code: challengeCode(),
+          issuedBy: auditor.id,
+        });
+      });
+
+      if (row === undefined) {
+        throw new Error(`challenge for tree ${treeId} was not inserted`);
+      }
+
+      return { treeId, ...toChallenge(row, clock()) };
+    } catch (error) {
+      if ((error as { constraint?: unknown }).constraint !== ONE_OPEN_PER_TREE) {
+        throw error;
+      }
+
+      const open = await auditRepository(database).openChallenge(treeId);
+
+      throw new DomainError(
+        'challenge_active',
+        open === undefined
+          ? undefined
+          : { challengeId: open.id, expiresAt: open.expires_at.toISOString() },
+      );
+    }
+  };
+
 /** docs/BE/features/audit.md: an auditor's sessions, each a frozen, reproducible sample of one campaign's trees. */
 export const createAuditService = (dependencies: AuditDependencies) => {
   const repository = auditRepository(dependencies.database);
   const open = openOf(dependencies);
   const record = recordOf(dependencies);
   const close = closeOf(dependencies);
+  const challenge = challengeOf(dependencies);
 
   /** The caller's own session; anyone else's answers as unknown (ADR-008, REG-005). */
   const ownSession = async (auditor: Auditor, id: string): Promise<SessionRow> => {
@@ -197,6 +274,7 @@ export const createAuditService = (dependencies: AuditDependencies) => {
       sessionOf(auditor, await open(auditor, input)),
     session: sessionOf,
     record,
+    challenge,
 
     close: async (auditor: Auditor, id: string, summary: string) => {
       const built = await close(auditor, id, summary);

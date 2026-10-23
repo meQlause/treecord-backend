@@ -143,7 +143,7 @@ export const matrixProbes = (
     plantingInReview: () => plantingInReview(context),
     sessionOf: (owner: Owner) => sessionOf(context, owner),
     auditWrite:
-      (action: 'findings' | 'close', body: object) =>
+      (action: 'findings' | 'close' | 'challenges', body: object) =>
       async (owner: Owner): Promise<Probe> => ({
         method: 'post',
         path: `${await reviewedSessionOf(context, owner)}/${action}`,

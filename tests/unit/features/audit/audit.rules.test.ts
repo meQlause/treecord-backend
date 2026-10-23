@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildReport,
+  challengeRefusal,
   missingFindings,
   totalsOf,
   type SampleFacts,
@@ -81,5 +82,35 @@ describe('missingFindings and totalsOf (FR-190)', () => {
     expect(missingFindings(open)).toEqual(['3091', '3104']);
     expect(missingFindings(SAMPLES)).toEqual([]);
     expect(totalsOf(open)).toEqual({ ok: 0, issue: 1, needsFollowup: 0 });
+  });
+});
+
+// §6, FR-198 (REG-007 keeps the order itself).
+describe('challengeRefusal', () => {
+  const SAMPLED_ALIVE = {
+    sessionStatus: 'open',
+    sampled: true,
+    openChallenge: null,
+    treeStatus: 'alive',
+  };
+  const OPEN = {
+    id: '4c1f8e2a-7b3d-4e9a-8f6c-2d5e1a9b7c30',
+    expiresAt: '2026-12-20T04:00:00.000Z',
+  };
+
+  it('lets a sampled Alive tree with no open challenge through', () => {
+    expect(challengeRefusal(SAMPLED_ALIVE)).toBeNull();
+  });
+
+  it.each([
+    [{ sessionStatus: 'closed' }, { code: 'session_closed' }],
+    [{ sampled: false }, { code: 'not_found' }],
+    [
+      { openChallenge: OPEN },
+      { code: 'challenge_active', details: { challengeId: OPEN.id, expiresAt: OPEN.expiresAt } },
+    ],
+    [{ treeStatus: 'dead' }, { code: 'tree_not_alive', details: { status: 'dead' } }],
+  ])('%o answers %o', (change, refusal) => {
+    expect(challengeRefusal({ ...SAMPLED_ALIVE, ...change })).toEqual(refusal);
   });
 });

@@ -204,8 +204,60 @@ const recordWrites = (database: Kysely<DB>) => ({
   },
 });
 
+/** §6: what a challenge is judged on, and its insert. */
+const challengeWrites = (database: Kysely<DB>) => ({
+  /** The tree's status, and whether this session sampled it; undefined for an unknown tree. */
+  challengeTarget: (id: string, treeId: string) =>
+    database
+      .selectFrom('trees as t')
+      .leftJoin('audit_samples as a', (join) =>
+        join.onRef('a.tree_id', '=', 't.tree_id').on('a.session_id', '=', id),
+      )
+      .select(['t.status', sql<boolean>`a.session_id is not null`.as('sampled')])
+      .where('t.tree_id', '=', treeId)
+      .executeTakeFirst(),
+
+  /** FR-198: the tree's unanswered, unexpired challenge from any session. */
+  openChallenge: (treeId: string) =>
+    database
+      .selectFrom('challenges')
+      .select(['id', 'expires_at'])
+      .where('tree_id', '=', treeId)
+      .where('fulfilled_submission_id', 'is', null)
+      .where('expires_at', '>', sql<Date>`now()`)
+      .orderBy('created_at', 'desc')
+      .executeTakeFirst(),
+
+  /** Issued now, open for two of the campaign's time units (60 days in production); `challenges_one_open_per_tree`
+   *  refuses a second open one (23P01). */
+  insertChallenge: async (challenge: {
+    sessionId: string;
+    treeId: string;
+    code: string;
+    issuedBy: string;
+  }) =>
+    (
+      await sql<{
+        id: string;
+        tree_id: string;
+        code: string;
+        created_at: Date;
+        expires_at: Date;
+        fulfilled_submission_id: string | null;
+      }>`insert into public.challenges (tree_id, code, issued_by_profile_id, audit_session_id, created_at, expires_at)
+        select t.tree_id, ${challenge.code}, ${challenge.issuedBy}, ${challenge.sessionId}, now(),
+          now() + make_interval(secs => 2 * c.time_unit_seconds)
+        from public.trees t join public.campaigns c on c.address = t.campaign_address
+        where t.tree_id = ${challenge.treeId}
+        returning id, tree_id::text, code, created_at, expires_at, fulfilled_submission_id`.execute(
+        database,
+      )
+    ).rows[0],
+});
+
 export const auditRepository = (database: Kysely<DB>) => ({
   ...openWrites(database),
+  ...challengeWrites(database),
   ...recordWrites(database),
   ...sessionReads(database),
 });

@@ -9,7 +9,7 @@ const statusOf = (row: ChallengeRow, now: Date): string => {
   return row.expires_at > now ? 'open' : 'expired';
 };
 
-const toChallenge = (row: ChallengeRow, now: Date) => ({
+export const toChallenge = (row: ChallengeRow, now: Date) => ({
   id: row.id,
   code: row.code,
   issuedAt: row.created_at.toISOString(),
