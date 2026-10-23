@@ -174,6 +174,11 @@ const MATRIX: AccessMatrix = {
     probe: { method: 'get', path: '/api/v1/planter/uploads' },
     ok: 200,
   },
+  'GET /evidence/capture-target': {
+    allowed: ['planter'],
+    probe: { method: 'get', path: `/api/v1/evidence/capture-target?kind=ALIVE&treeId=${TREE_ID}` },
+    ok: 200,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,

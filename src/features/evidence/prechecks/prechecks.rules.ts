@@ -82,6 +82,19 @@ export const milestoneWindow = (
   return { opensAt, closesAt: opensAt + unit };
 };
 
+/** FR-082, FR-103: the lowest milestone with neither a payout nor a forfeit; null once all six are settled. */
+export const currentMilestone = (settled: {
+  paid: number[];
+  forfeited: number[];
+}): number | null => {
+  const unsettled = MILESTONE_DUE_UNITS.findIndex(
+    (_month, milestone) =>
+      !settled.paid.includes(milestone) && !settled.forfeited.includes(milestone),
+  );
+
+  return unsettled === -1 ? null : unsettled;
+};
+
 type Judged = { value: string; limit: string; reason: Reason };
 
 const row = (check: CheckId, passed: boolean, { value, limit, reason }: Judged): CheckRow => ({

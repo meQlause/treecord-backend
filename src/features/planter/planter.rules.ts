@@ -107,15 +107,8 @@ export const milestoneStates = (tree: TreeTiming, settled: Settled, chainTime: n
     };
   });
 
-/** §1: the lowest milestone with neither a payout nor a forfeit; null once all six are settled. */
-export const currentMilestone = (settled: Settled): number | null => {
-  const unsettled = MILESTONE_DUE_UNITS.findIndex(
-    (_month, milestone) =>
-      !settled.paid.includes(milestone) && !settled.forfeited.includes(milestone),
-  );
-
-  return unsettled === -1 ? null : unsettled;
-};
+// §1: the current milestone is the evidence rule's, so the capture target and S16 agree
+export { currentMilestone } from '../evidence/index.js';
 
 const PERCENT = 100;
 const ONE_DECIMAL = 10;

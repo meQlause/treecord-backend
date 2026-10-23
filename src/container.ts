@@ -15,6 +15,8 @@ import { carbonHoldingsRouter, carbonPublicRouter } from './features/carbon/inde
 import { registerDevices, type DevicesCradle } from './features/devices/devices.container.js';
 import { devicesRouter } from './features/devices/index.js';
 import { registerDonor, type DonorCradle } from './features/donor/donor.container.js';
+import { registerEvidence, type EvidenceCradle } from './features/evidence/evidence.container.js';
+import { evidenceRouter } from './features/evidence/index.js';
 import { planterRouter } from './features/planter/index.js';
 import { registerPlanter, type PlanterCradle } from './features/planter/planter.container.js';
 import { donorRouter } from './features/donor/index.js';
@@ -67,7 +69,8 @@ export type Cradle = SharedCradle &
   CarbonCradle &
   DonorCradle &
   DevicesCradle &
-  PlanterCradle;
+  PlanterCradle &
+  EvidenceCradle;
 
 /** The composition root: shared singletons, then each feature's register(). */
 export const createRootContainer = (config: Config): AwilixContainer<Cradle> => {
@@ -116,6 +119,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
   registerDonor(container);
   registerDevices(container);
   registerPlanter(container);
+  registerEvidence(container);
 
   return container;
 };
@@ -147,6 +151,7 @@ export const privateRouters = ({
   donorService,
   devicesService,
   planterService,
+  evidenceService,
 }: Cradle): Router[] => [
   accountsRouter(accountsService),
   jobsRouter(jobsService),
@@ -154,4 +159,5 @@ export const privateRouters = ({
   donorRouter(donorService),
   devicesRouter(devicesService),
   planterRouter(planterService),
+  evidenceRouter(evidenceService),
 ];

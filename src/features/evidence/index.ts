@@ -1,5 +1,8 @@
+export { evidenceRouter } from './evidence.routes.js';
+
 // read by planter's capture blocks (planter.md, evidence-prechecks §1 "Target"); B5b adds the evidence routes
 export {
+  currentMilestone,
   milestoneWindow,
   reasonsOf,
   targetChecks,
