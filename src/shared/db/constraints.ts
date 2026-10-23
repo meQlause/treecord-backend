@@ -10,6 +10,12 @@ const precheck = (reason: string): Mapped => ({
   details: { reasons: [reason] },
 });
 
+// The API validates these fields first; the constraint only answers a request that slipped past it.
+const invalid = (path: string, message: string): Mapped => ({
+  code: 'validation_error',
+  details: [{ path, message }],
+});
+
 const BY_CONSTRAINT: Readonly<Record<string, Mapped>> = {
   challenges_one_open_per_tree: { code: 'challenge_active' }, // 23P01, FR-198
   submissions_one_live_check_in_idx: precheck('milestone_already_done'), // 23505, FR-138
@@ -17,6 +23,8 @@ const BY_CONSTRAINT: Readonly<Record<string, Mapped>> = {
   submissions_one_live_planting_idx: precheck('slot_already_planted'),
   submissions_one_planting_per_slot_idx: precheck('slot_already_planted'),
   submissions_one_inflight_event_idx: precheck('already_reported'),
+  devices_label_required: invalid('label', 'Required'), // 23514, FR-120
+  public_p256_key_only: invalid('publicKey', 'Must be a public P-256 key'), // 23514, NFR-001
 };
 
 /** The domain error a PostgreSQL violation stands for, or undefined when it is not one the API expects. */

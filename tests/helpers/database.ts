@@ -10,8 +10,12 @@ export type TestDatabase = {
   stop: () => Promise<void>;
 };
 
-/** A throwaway PostgreSQL 17 in tmpfs with every migration applied (docs/BE/testing.md §7, docker-testing). */
-export const startMigratedDatabase = async (poolMax = 4): Promise<TestDatabase> => {
+/** A throwaway PostgreSQL 17 in tmpfs, by default with every migration applied (docs/BE/testing.md §7). */
+export const startMigratedDatabase = async (
+  poolMax = 4,
+  migrate: (database: DatabaseClient) => Promise<unknown> = (database) =>
+    migrateToLatest(database, 'migrations'),
+): Promise<TestDatabase> => {
   const postgres = await new PostgreSqlContainer('postgres:17')
     .withTmpFs({ '/var/lib/postgresql/data': 'rw' })
     .start();
@@ -22,7 +26,7 @@ export const startMigratedDatabase = async (poolMax = 4): Promise<TestDatabase> 
     onIdleError: () => undefined,
   });
 
-  await migrateToLatest(database, 'migrations');
+  await migrate(database);
 
   return {
     postgres,

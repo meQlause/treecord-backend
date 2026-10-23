@@ -36,3 +36,19 @@ export const migrateToLatest = async <Schema>(
 
   return results;
 };
+
+/** Applies migrations up to and including `name`: for tests that need rows written before a later migration. */
+export const migrateUpTo = async <Schema>(
+  database: Kysely<Schema>,
+  folder: string,
+  name: string,
+): Promise<MigrationResult[]> => {
+  const migrator = new Migrator({ db: database, provider: sqlFolder(folder) });
+  const { error, results = [] } = await migrator.migrateTo(name);
+
+  if (error !== undefined) {
+    throw error;
+  }
+
+  return results;
+};
