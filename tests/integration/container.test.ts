@@ -100,6 +100,16 @@ const MATRIX: AccessMatrix = {
     probe: { method: 'get', path: '/api/v1/carbon/holdings/retirements' },
     ok: 200,
   },
+  'GET /donor/dashboard': {
+    allowed: ['donor', 'operator'],
+    probe: { method: 'get', path: '/api/v1/donor/dashboard' },
+    ok: 200,
+  },
+  'GET /donor/campaigns': {
+    allowed: ['donor', 'operator'],
+    probe: { method: 'get', path: '/api/v1/donor/campaigns' },
+    ok: 200,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,

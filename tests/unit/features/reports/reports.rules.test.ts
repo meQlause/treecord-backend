@@ -2,23 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   decodeEvidenceCursor,
   encodeEvidenceCursor,
-  ratioBps,
   survivalRateBps,
 } from '../../../../src/features/reports/reports.rules.js';
 
 // docs/BE/features/reports.md §1 computed values, with the "Roots that stay" figures.
-describe('ratioBps', () => {
-  it('floors part × 10000 / whole', () => {
-    expect(ratioBps('2100000000', '12600000000')).toBe(1666);
-    expect(ratioBps('18000000000', '18000000000')).toBe(10_000);
-  });
-
-  it('is null without a whole: before activation there is no incentive pool', () => {
-    expect(ratioBps('0', null)).toBeNull();
-    expect(ratioBps('0', '0')).toBeNull();
-  });
-});
-
 describe('survivalRateBps (FR-065)', () => {
   it('alive, flagged and completed trees over every planted tree', () => {
     expect(

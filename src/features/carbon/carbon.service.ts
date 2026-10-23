@@ -1,6 +1,7 @@
 import { DomainError } from '../../shared/errors.js';
 import { toBatch, toCertificate, toHoldings, toRetirement } from './carbon.mapper.js';
-import type { BatchRow, CarbonRepository } from './carbon.repository.js';
+import type { DatabaseClient } from '../../shared/db/database.js';
+import { holdingReads, type BatchRow, type CarbonRepository } from './carbon.repository.js';
 import {
   decodeBatchCursor,
   decodeRetirementCursor,
@@ -152,3 +153,11 @@ export const createCarbonService = (dependencies: CarbonDependencies) => {
     },
   };
 };
+
+/** FR-239: a wallet's carbon totals, the S15 figures, for the donor home (read on the caller's transaction). */
+export const walletCarbonSummary = async (database: DatabaseClient, wallet: string) =>
+  toHoldings({
+    summary: await holdingReads(database).summary(wallet),
+    reservations: [],
+    balances: [],
+  }).summary;

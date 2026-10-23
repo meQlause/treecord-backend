@@ -11,6 +11,8 @@ import {
 import { campaignsRouter } from './features/campaigns/index.js';
 import { registerCarbon, type CarbonCradle } from './features/carbon/carbon.container.js';
 import { carbonHoldingsRouter, carbonPublicRouter } from './features/carbon/index.js';
+import { registerDonor, type DonorCradle } from './features/donor/donor.container.js';
+import { donorRouter } from './features/donor/index.js';
 import { accountsRouter } from './features/accounts/index.js';
 import { registerJobs, type JobsCradle } from './features/jobs/jobs.container.js';
 import { jobsRouter } from './features/jobs/index.js';
@@ -55,7 +57,8 @@ export type Cradle = SharedCradle &
   CampaignsCradle &
   TreesCradle &
   ReportsCradle &
-  CarbonCradle;
+  CarbonCradle &
+  DonorCradle;
 
 /** The composition root: shared singletons, then each feature's register(). */
 export const createRootContainer = (config: Config): AwilixContainer<Cradle> => {
@@ -100,6 +103,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
   registerTrees(container);
   registerReports(container);
   registerCarbon(container);
+  registerDonor(container);
 
   return container;
 };
@@ -128,8 +132,10 @@ export const privateRouters = ({
   accountsService,
   jobsService,
   carbonService,
+  donorService,
 }: Cradle): Router[] => [
   accountsRouter(accountsService),
   jobsRouter(jobsService),
   carbonHoldingsRouter(carbonService),
+  donorRouter(donorService),
 ];

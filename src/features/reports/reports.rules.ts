@@ -1,15 +1,9 @@
 import { z } from 'zod';
-import { BPS } from '../../generated/frozen/constants.js';
+import { ratioBps } from '../../shared/bps.js';
 import { decodeCursor, encodeCursor } from '../../shared/http/cursor.js';
 
 // docs/BE/features/reports.md §1–§2: the report's ratios and the evidence cursor. Amounts are decimal strings and
 // divide as bigint (REG-001).
-
-const BPS_BIG = BigInt(BPS);
-
-/** floor(part × 10000 / whole); null when there is no whole yet (an incentive pool before activation, no trees). */
-export const ratioBps = (part: string, whole: string | null): number | null =>
-  whole === null || whole === '0' ? null : Number((BigInt(part) * BPS_BIG) / BigInt(whole));
 
 export type TreeCounts = {
   planted: number;

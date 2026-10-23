@@ -1,6 +1,7 @@
 import { MILESTONE_DUE_UNITS } from '../../generated/frozen/constants.js';
 import type { CampaignHeaderRow, EvidenceRow, ReportRecords } from './reports.repository.js';
-import { ratioBps, survivalRateBps } from './reports.rules.js';
+import { ratioBps } from '../../shared/bps.js';
+import { survivalRateBps } from './reports.rules.js';
 
 const monthOf = (milestone: number): number => MILESTONE_DUE_UNITS[milestone] ?? 0;
 

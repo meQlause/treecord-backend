@@ -123,7 +123,7 @@ const retirements = (database: Kysely<DB>) =>
     ]);
 
 /** §3: one wallet's totals and reservations. */
-const holdingReads = (database: Kysely<DB>) => ({
+export const holdingReads = (database: Kysely<DB>) => ({
   summary: (wallet: string) =>
     database
       .selectNoFrom((builder) => [
