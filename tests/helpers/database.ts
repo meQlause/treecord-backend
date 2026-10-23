@@ -23,7 +23,7 @@ export const startMigratedDatabase = async (
     url: postgres.getConnectionUri(),
     poolMax,
     timeoutMs: 30_000,
-    onIdleError: () => undefined,
+    onConnectionError: () => undefined,
   });
 
   await migrate(database);

@@ -30,7 +30,7 @@ describe('migrations — ADR-019, data-spec §5.2 and §6.2', () => {
       url: postgres.getConnectionUri(),
       poolMax: 2,
       timeoutMs: 30_000,
-      onIdleError: () => undefined,
+      onConnectionError: () => undefined,
     });
   }, CONTAINER_START_MS);
 

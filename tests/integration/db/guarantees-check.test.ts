@@ -20,7 +20,7 @@ describe('data guarantees — docs/data/guarantees-check.sql on PostgreSQL 17', 
       url: postgres.getConnectionUri(),
       poolMax: 1,
       timeoutMs: 30_000,
-      onIdleError: () => undefined,
+      onConnectionError: () => undefined,
     });
     await migrateToLatest(database, 'migrations');
   }, CONTAINER_START_MS);

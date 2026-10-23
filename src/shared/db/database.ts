@@ -12,16 +12,16 @@ type DatabaseOptions = {
   poolMax: number;
   /** ADR-010, phases.md D-6: bounds connecting, the statement on the server and the wait for its answer. */
   timeoutMs: number;
-  /** An idle connection the server dropped (restart, failover). pg removes it and reconnects on the
-   *  next query; without a listener the 'error' event would crash the process. */
-  onIdleError: (error: Error) => void;
+  /** A connection the server dropped (restart, failover, a killed backend), idle or in use. The query in flight fails
+   *  and pg reconnects on the next one; without a listener the 'error' event would crash the process. */
+  onConnectionError: (error: Error) => void;
 };
 
 export const createDatabase = ({
   url,
   poolMax,
   timeoutMs,
-  onIdleError,
+  onConnectionError,
 }: DatabaseOptions): DatabaseClient => {
   const pool = new postgresDriver.Pool({
     connectionString: url,
@@ -31,7 +31,8 @@ export const createDatabase = ({
     query_timeout: timeoutMs,
   });
 
-  pool.on('error', onIdleError);
+  pool.on('error', onConnectionError); // idle connections
+  pool.on('connect', (client) => client.on('error', onConnectionError)); // connections in use
 
   return new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
 };

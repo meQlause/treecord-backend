@@ -27,7 +27,7 @@ describe('health and readiness — ADR-017', () => {
       url: postgres.getConnectionUri(),
       poolMax: 2,
       timeoutMs: 5_000,
-      onIdleError: (error) => idleErrors.push(error),
+      onConnectionError: (error) => idleErrors.push(error),
     });
   }, CONTAINER_START_MS);
 

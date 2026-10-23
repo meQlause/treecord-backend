@@ -12,7 +12,7 @@ const database = createDatabase({
   url: config.DATABASE_URL,
   poolMax: config.DATABASE_POOL_MAX,
   timeoutMs: config.DATABASE_STATEMENT_TIMEOUT_MS,
-  onIdleError: (error) => logger.warn({ err: error }, 'postgres idle connection dropped'),
+  onConnectionError: (error) => logger.warn({ err: error }, 'postgres connection dropped'),
 });
 const chain = createChainClient(config.RPC_URL, config.RPC_TIMEOUT_MS);
 

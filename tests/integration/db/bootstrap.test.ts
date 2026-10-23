@@ -34,7 +34,7 @@ describe('compatibility bootstrap — ADR-019 "inert"', () => {
       url: postgres.getConnectionUri(),
       poolMax: 1,
       timeoutMs: 30_000,
-      onIdleError: () => undefined,
+      onConnectionError: () => undefined,
     });
   }, CONTAINER_START_MS);
 

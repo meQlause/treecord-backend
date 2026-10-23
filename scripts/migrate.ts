@@ -8,7 +8,7 @@ const database = createDatabase({
   url: config.DATABASE_URL,
   poolMax: 1,
   timeoutMs: config.DATABASE_STATEMENT_TIMEOUT_MS,
-  onIdleError: (error) => console.error('postgres idle connection dropped', error.message),
+  onConnectionError: (error) => console.error('postgres connection dropped', error.message),
 });
 
 try {

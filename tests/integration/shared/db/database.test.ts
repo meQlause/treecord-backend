@@ -33,7 +33,7 @@ describe('database timeouts — ADR-010, phases.md D-6', () => {
       url: postgres.getConnectionUri(),
       poolMax: 2,
       timeoutMs: STATEMENT_TIMEOUT_MS,
-      onIdleError: () => undefined,
+      onConnectionError: () => undefined,
     });
   }, CONTAINER_START_MS);
 
@@ -55,7 +55,7 @@ describe('database timeouts — ADR-010, phases.md D-6', () => {
       url: 'postgres://treecord:treecord@127.0.0.1:1/treecord',
       poolMax: 1,
       timeoutMs: STATEMENT_TIMEOUT_MS,
-      onIdleError: () => undefined,
+      onConnectionError: () => undefined,
     });
     const response = await request(appQuerying(unreachable)).get('/slow').expect(503);
 
