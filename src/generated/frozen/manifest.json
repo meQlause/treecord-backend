@@ -1,6 +1,6 @@
 {
   "sourceRepo": "treecord-backend",
-  "sourceCommit": "f0078d2356c59822b335dcbb21134b2aeb2cf95b",
+  "sourceCommit": "fad0295d73355796c8d66c96c80194fc2948f940",
   "files": {
     "migrations/101_20261016120000_core.sql": {
       "source": "supabase/migrations/20261016120000_core.sql",
@@ -73,6 +73,10 @@
     "src/generated/frozen/ai.ts": {
       "source": "packages/shared/src/ai.ts",
       "sha256": "2441066bd4a9ea46a6b63e46e460604ea1e806ae03547584364a0b58370a0943"
+    },
+    "src/generated/frozen/attester.ts": {
+      "source": "packages/pipeline/src/attester.ts",
+      "sha256": "dad66596334dd8bba245a6e32819234baadba8e57958df93532e6b7cad966c48"
     },
     "src/generated/frozen/constants.ts": {
       "source": "packages/shared/src/constants.ts",

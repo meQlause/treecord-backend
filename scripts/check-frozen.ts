@@ -15,7 +15,9 @@ const ROOTS = [
   {
     dir: FROZEN,
     frozen: (file: string) => file !== 'manifest.json',
-    source: (file: string) => `packages/shared/src/${file}`,
+    // the attester is the pipeline's (phases.md B6c); every other copy is packages/shared's
+    source: (file: string) =>
+      file === 'attester.ts' ? 'packages/pipeline/src/attester.ts' : `packages/shared/src/${file}`,
   },
   {
     // migrations/101_20261016120000_core.sql is supabase/migrations/20261016120000_core.sql

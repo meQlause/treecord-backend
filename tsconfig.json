@@ -11,7 +11,8 @@
     "skipLibCheck": true,
     "rootDir": ".",
     "outDir": "dist",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": { "@treecord/shared": ["./src/generated/treecord-shared.js"] }
   },
   "include": ["src", "tests", "scripts"]
 }

@@ -6,8 +6,8 @@ import {
 import { isoInstant as iso } from '../../../shared/instant.js';
 
 // docs/BE/features/evidence-prechecks.md: pure rules, every instant and row passed in (epoch ms). This file holds the
-// target stage (checks 9–15, the capture blocks of S16–S19) and the link stage (4, 8, 9–13, 15); the submit stage is in
-// submit.rules.ts, the approve stage comes with the review endpoint.
+// target stage (checks 9–15, the capture blocks of S16–S19), the link stage (4, 8, 9–13, 15) and the approve stage
+// (10–13); the submit stage is in submit.rules.ts.
 
 const MS_PER_SECOND = 1000;
 // a held submission is shown by the first eight characters of its id (S21 "5c1e9a7d · needs_review")
@@ -256,6 +256,18 @@ export const targetChecks = (facts: TargetFacts): CheckRow[] => {
     targetFree(facts),
     ...(planting ? [] : [challenge(facts)]),
     tag(facts),
+  ];
+};
+
+/** §1 "Approve" (FR-156): the target is still open in chain time. `target_free` reads the mirror only, since the
+ *  submission under review is itself the target's live holder. */
+export const approveChecks = (facts: TargetFacts): CheckRow[] => {
+  const planting = facts.kind === 'PLANTED';
+
+  return [
+    planting ? campaignStatus(facts) : treeStatus(facts),
+    ...(facts.kind === 'ALIVE' ? [window(facts)] : []),
+    targetFree({ ...facts, held: null }),
   ];
 };
 

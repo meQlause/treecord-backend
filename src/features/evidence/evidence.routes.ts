@@ -5,9 +5,11 @@ import { z } from 'zod';
 import { pathParam } from '../../shared/http/params.js';
 import {
   captureTargetSchema,
+  reviewSchema,
   submitSchema,
   uploadUrlSchema,
   type CaptureTargetQuery,
+  type ReviewBody,
   type SubmitBody,
   type UploadUrlBody,
 } from './evidence.schema.js';
@@ -67,4 +69,18 @@ export const evidenceRouter = (evidence: EvidenceService): Router =>
           pathParam(z.uuid(), req.params.submissionId),
         ),
       );
-    });
+    })
+    .post(
+      '/operator/submissions/:submissionId/review',
+      allowRoles('operator'),
+      validate(reviewSchema),
+      async (req, res) => {
+        const { status, body } = await evidence.review(
+          res.locals['profile'] as { id: string; role: string },
+          pathParam(z.uuid(), req.params.submissionId),
+          res.locals['body'] as ReviewBody,
+        );
+
+        res.status(status).json(body);
+      },
+    );

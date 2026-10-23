@@ -20,6 +20,7 @@ import {
 import type { CaptureTargetQuery, UploadUrlBody } from './evidence.schema.js';
 import { linkChecks, reasonsOf } from './prechecks/prechecks.rules.js';
 import { toDetail } from './evidence.mapper.js';
+import { createReviewService } from './review.service.js';
 import { createSubmitService } from './submission.service.js';
 
 type EvidenceDependencies = {
@@ -30,6 +31,7 @@ type EvidenceDependencies = {
   /** The server clock: challenge expiry. */
   now: () => Date;
   randomBytes: (count: number) => Uint8Array;
+  attester: Parameters<typeof createReviewService>[0]['attester'];
 };
 
 const EVIDENCE_BUCKET = 'evidence';
@@ -239,5 +241,6 @@ export const createEvidenceService = (dependencies: EvidenceDependencies) => {
     uploadUrl: uploadUrlOf(services),
     submit: createSubmitService(dependencies),
     detail: detailOf(services),
+    review: createReviewService({ ...dependencies, detail: detailOf(services) }),
   };
 };

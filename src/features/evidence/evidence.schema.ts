@@ -60,3 +60,11 @@ export const submitSchema = z.strictObject({
 });
 
 export type SubmitBody = z.infer<typeof submitSchema>;
+
+/** §5 (FR-156): the operator's decision and note. */
+export const reviewSchema = z.strictObject({
+  approve: z.boolean(),
+  note: z.string().trim().min(1).max(2000),
+});
+
+export type ReviewBody = z.infer<typeof reviewSchema>;

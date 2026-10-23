@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  approveChecks,
   currentMilestone,
   linkChecks,
   milestoneWindow,
@@ -213,6 +214,45 @@ describe('link prechecks', () => {
     ],
   ])('a hash already held by %s', (_case, holder, expected) => {
     expect(linkReasons({ existingByHash: holder })).toEqual(expected);
+  });
+});
+
+// §1, the "Approve" column (FR-156): checks 10–13, chain time, the mirror only.
+describe('approve prechecks', () => {
+  const approveReasons = (change: Partial<TargetFacts>, base: TargetFacts = ALIVE) =>
+    reasonsOf(approveChecks({ ...base, ...change }));
+
+  it('an ALIVE check-in in its window: tree status, window and target, all passing', () => {
+    expect(approveChecks(ALIVE).map(({ check, ok }) => [check, ok])).toEqual([
+      ['tree_status', true],
+      ['milestone_window', true],
+      ['target_free', true],
+    ]);
+  });
+
+  it('the submission under review holds its own target, so only the mirror can take it', () => {
+    expect(
+      approveReasons({ held: { id: '5c1e9a7d-0000', status: 'needs_review', milestone: 2 } }),
+    ).toEqual([]);
+    expect(approveReasons({ mirrored: true })).toEqual(['milestone_already_done']);
+  });
+
+  it('judges the window in chain time: closed after it', () => {
+    expect(approveReasons({ chainTime: CLOSES + 1 })).toEqual(['milestone_not_open']);
+  });
+
+  it('a planting checks the campaign, not a tree', () => {
+    expect(approveChecks(PLANTED).map(({ check }) => check)).toEqual([
+      'campaign_status',
+      'target_free',
+    ]);
+    expect(approveReasons({ campaignStatus: 'completed' }, PLANTED)).toEqual([
+      'campaign_not_active',
+    ]);
+  });
+
+  it('a dead report has no window', () => {
+    expect(approveReasons({ kind: 'DEAD', milestone: null })).toEqual([]);
   });
 });
 

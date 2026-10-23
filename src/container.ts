@@ -41,6 +41,7 @@ import {
   type TokenVerifier,
 } from './shared/auth/privy.js';
 import { createChainClient } from './shared/chain/client.js';
+import { createAttester } from './shared/chain/attester.js';
 import { blockTime, chainClock } from './shared/chain/clock.js';
 import { createDatabase, type DatabaseClient } from './shared/db/database.js';
 import { authenticateIfPresent, type AuthOptions } from './shared/http/auth.js';
@@ -60,6 +61,8 @@ type SharedCradle = {
   /** The server clock; injected so tests fix it (SR-1). */
   clock: () => Date;
   storage: Storage;
+  /** Signs operator-approved attestations (ADR-002, ADR-014). */
+  attester: ReturnType<typeof createAttester>;
   /** CSPRNG bytes for codes the API issues (NFR-052). */
   randomBytes: (count: number) => Uint8Array;
   verifyToken: TokenVerifier;
@@ -109,6 +112,9 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
     randomBytes: asValue((count: number) => new Uint8Array(randomBytes(count))),
     storage: asFunction(({ config: settings, clock }: Cradle) =>
       createStorage(settings, clock),
+    ).singleton(),
+    attester: asFunction(({ config: settings }: Cradle) =>
+      createAttester(settings.ATTESTER_PRIVATE_KEY as `0x${string}`, settings.CHAIN_ID),
     ).singleton(),
     verifyToken: asFunction(({ config: settings }: Cradle) =>
       privyVerifier({ appId: settings.PRIVY_APP_ID, resolveKey: privyJwks(settings.PRIVY_APP_ID) }),

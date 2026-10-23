@@ -273,7 +273,44 @@ const detailReads = (database: Kysely<DB>) => ({
 
 export { IN_FLIGHT };
 
+/** §5: what an operator's decision reads and writes. */
+const reviewWrites = (database: Kysely<DB>) => ({
+  /** The submission with what signing needs: its signed point, hash, score and the submitter's wallet. */
+  reviewRow: (id: string) =>
+    database
+      .selectFrom('submissions')
+      .innerJoin('profiles', 'profiles.id', 'submissions.profile_id')
+      .selectAll('submissions')
+      .select([
+        'profiles.wallet_address',
+        sql<string | null>`submissions.tree_id::text`.as('tree_id'),
+      ])
+      .where('submissions.id', '=', id)
+      .executeTakeFirst(),
+
+  /** The conditional update that settles a race: undefined when the submission had already left review. */
+  decide: (id: string, values: Updateable<Submissions>) =>
+    database
+      .updateTable('submissions')
+      .set(values)
+      .where('id', '=', id)
+      .where('status', '=', 'needs_review')
+      .returning('id')
+      .executeTakeFirst(),
+
+  /** The challenge an attested check-in carried is fulfilled, as the worker's own pass path does. */
+  fulfilChallenge: async (challengeId: string, submissionId: string): Promise<void> => {
+    await database
+      .updateTable('challenges')
+      .set({ fulfilled_submission_id: submissionId })
+      .where('id', '=', challengeId)
+      .where('fulfilled_submission_id', 'is', null)
+      .execute();
+  },
+});
+
 export const evidenceRepository = (database: Kysely<DB>) => ({
+  ...reviewWrites(database),
   ...slotReads(database),
   ...treeReads(database),
   ...linkReads(database),
@@ -288,6 +325,8 @@ type Rows<Read extends keyof EvidenceRepository> = Awaited<ReturnType<EvidenceRe
 export type SlotTarget = NonNullable<Rows<'slotTarget'>>;
 
 export type TreeTarget = NonNullable<Rows<'treeTarget'>>;
+
+export type ReviewRow = NonNullable<Rows<'reviewRow'>>;
 
 export type HeldRow = NonNullable<Rows<'livePlanting'>>;
 

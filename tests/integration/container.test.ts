@@ -104,6 +104,22 @@ const submissionReadOf = async (owner: Role | 'other'): Promise<Probe> => ({
   path: (await submissionOf(owner)).path.replace(/\/submit$/, ''),
 });
 
+// a planting waiting for review on PLANTING_CAMPAIGN, on its own slot each call (one live planting per slot)
+const plantingInReview = async (): Promise<string> => {
+  announced += 1;
+
+  const [row] = (
+    await sql<{
+      id: string;
+    }>`insert into public.submissions (profile_id, campaign_address, kind, milestone, slot_id, video_sha256, status)
+      values (${profileOf.get('other')}, ${PLANTING_CAMPAIGN}, 'PLANTED', 0, ${100 + announced},
+        ${String(announced).padStart(64, 'f')}, 'needs_review')
+      returning id`.execute(test.database)
+  ).rows;
+
+  return row?.id ?? '';
+};
+
 const jobOf = async (owner: Role | 'other'): Promise<Probe> => ({
   method: 'get',
   path: `/api/v1/jobs/${await aJob(test.database, profileOf.get(owner) ?? null)}`,
@@ -366,6 +382,15 @@ const MATRIX: AccessMatrix = {
       path: '/api/v1/operator/carbon/retirements/1/registry-retirement',
       body: { reference: 'Matrix' },
     },
+    ok: 200,
+  },
+  'POST /operator/submissions/:submissionId/review': {
+    allowed: ['operator'],
+    probe: async () => ({
+      method: 'post',
+      path: `/api/v1/operator/submissions/${await plantingInReview()}/review`,
+      body: { approve: false, note: 'Matrix' },
+    }),
     ok: 200,
   },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
