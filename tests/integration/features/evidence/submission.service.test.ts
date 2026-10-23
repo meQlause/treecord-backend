@@ -227,3 +227,82 @@ describe('POST /api/v1/evidence/:submissionId/submit, the stored object', () => 
     expect(await statusOf(submissionId)).toBe('queued');
   });
 });
+
+const scoreJobs = async (submissionId: string) =>
+  (
+    await sql<{ n: number }>`select count(*)::int as n from public.relayer_jobs
+      where kind = 'score' and payload->>'submissionId' = ${submissionId}`.execute(test.database)
+  ).rows[0]?.n;
+
+// docs/BE/features/evidence.md §3 (one transaction, replay, concurrency), ADR-004, ADR-005, ADR-009, FR-138.
+describe('POST /api/v1/evidence/:submissionId/submit, writes and races', () => {
+  beforeEach(async () => {
+    await sql`delete from public.relayer_jobs where kind = 'score'`.execute(test.database);
+    await sql`delete from public.submissions where tree_id = 3001 and kind = 'ALIVE'`.execute(
+      test.database,
+    );
+  });
+
+  it('checking and its score job are one write: a failure between them leaves the row queued and no job', async () => {
+    const video = freshClip();
+    const submissionId = await phone.record(CHECK_IN_TARGET, video);
+    const scoreKey = `score:${submissionId}`;
+
+    // the score key is already taken by another action, so enqueue fails after the checking update
+    await sql`insert into public.relayer_jobs (kind, payload, idempotency_key)
+      values ('claim', '{}', ${scoreKey})`.execute(test.database);
+
+    const response = await submit(submissionId, await phone.sign(checkInPayload(video)));
+
+    expect(response.status).toBe(409);
+    expect(await statusOf(submissionId)).toBe('queued');
+    expect(await scoreJobs(submissionId)).toBe(0);
+  });
+
+  it('a second submit of the same submission replays its job: 200, idempotent, still one job', async () => {
+    const video = freshClip();
+    const submissionId = await phone.record(CHECK_IN_TARGET, video);
+    const signed = await phone.sign(checkInPayload(video));
+    const first = await submit(submissionId, signed);
+    const again = await submit(submissionId, signed);
+
+    expect(first.status).toBe(202);
+    expect(await statusOf(submissionId)).toBe('checking');
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual({ job: first.body.job, idempotent: true });
+    expect(await scoreJobs(submissionId)).toBe(1);
+  });
+
+  it('two submits of one submission at once: one 202, one replay, one job', async () => {
+    const video = freshClip();
+    const submissionId = await phone.record(CHECK_IN_TARGET, video);
+    const signed = await phone.sign(checkInPayload(video));
+    const responses = await Promise.all([
+      submit(submissionId, signed),
+      submit(submissionId, signed),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 202]);
+    expect(await scoreJobs(submissionId)).toBe(1);
+  });
+
+  it('two submissions for one month at once: one 202 and one milestone_already_done (FR-138)', async () => {
+    const [first, second] = [freshClip(), freshClip()];
+    const ids = [
+      await phone.record(CHECK_IN_TARGET, first),
+      await phone.record(CHECK_IN_TARGET, second),
+    ];
+    const bodies = [
+      await phone.sign(checkInPayload(first)),
+      await phone.sign(checkInPayload(second)),
+    ];
+    const responses = await Promise.all(
+      ids.map((id, index) => submit(id, bodies[index] as object)),
+    );
+    const statuses = responses.map((response) => response.status).sort();
+    const loser = responses.find((response) => response.status === 422);
+
+    expect(statuses).toEqual([202, 422]);
+    expect(loser?.body.error.details.reasons).toEqual(['milestone_already_done']);
+  });
+});
