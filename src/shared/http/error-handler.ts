@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler, Response } from 'express';
 import { ZodError } from 'zod';
+import { toDomainError } from '../db/constraints.js';
 import { isDatabaseUnavailable } from '../db/database.js';
 import { DomainError, ERROR_REGISTRY, type ErrorCode, type ErrorDetails } from '../errors.js';
 
@@ -68,6 +69,14 @@ const MATCHERS: ReadonlyArray<(error: unknown) => Outcome | undefined> = [
         }
       : undefined,
   (error) => BODY_ERRORS[String((error as { type?: unknown } | null)?.type)],
+  // error-handling §2.1: a constraint violation a service did not translate itself
+  (error) => {
+    const mapped = toDomainError(error);
+
+    return mapped === undefined
+      ? undefined
+      : { code: mapped.code, ...(mapped.details && { details: mapped.details }) };
+  },
   // ADR-010: a dependency down or timed out
   (error) =>
     isDatabaseUnavailable(error) ? { code: 'service_unavailable', log: true } : undefined,

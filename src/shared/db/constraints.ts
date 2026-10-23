@@ -1,7 +1,9 @@
 import { DomainError, type ErrorCode, type ErrorDetails } from '../errors.js';
 
 // docs/error-handling.md §2.1: a database violation becomes a domain error by constraint or index name, never by
-// SQLSTATE alone (23514 is shared by triggers and every plain CHECK).
+// SQLSTATE alone (23514 is shared by triggers and every plain CHECK). Rows §2.1 calls "not an error" or "retry"
+// (profiles_privy_user_id_key, relayer_jobs_idempotency_key_key, flags_one_pending_per_flagger_idx, slot_tags) are
+// handled by their feature's service; anything unmapped is a bug and answers 500 internal_error.
 type Mapped = { code: ErrorCode; details?: ErrorDetails };
 
 // FR-138 indexes carry a precheck reason inside precheck_failed, never a code of their own (error-handling §3 note).
@@ -23,6 +25,11 @@ const BY_CONSTRAINT: Readonly<Record<string, Mapped>> = {
   submissions_one_live_planting_idx: precheck('slot_already_planted'),
   submissions_one_planting_per_slot_idx: precheck('slot_already_planted'),
   submissions_one_inflight_event_idx: precheck('already_reported'),
+  // the same owner re-sending a still-queued video gets the existing submission; that is the evidence service's job
+  submissions_video_sha256_key: precheck('duplicate_video'), // 23505, FR-132
+  devices_thumbprint_key: { code: 'device_already_registered' }, // 23505, FR-120
+  profiles_wallet_address_key: { code: 'wallet_already_linked' }, // 23505, FR-003
+  planters_accept_carbon_agreement: { code: 'agreement_required' }, // 23514, FR-021
   devices_label_required: invalid('label', 'Required'), // 23514, FR-120
   public_p256_key_only: invalid('publicKey', 'Must be a public P-256 key'), // 23514, NFR-001
 };
