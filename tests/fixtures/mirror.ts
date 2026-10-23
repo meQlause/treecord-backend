@@ -5,11 +5,11 @@ import type { DatabaseClient } from '../../src/shared/db/database.js';
 // data (tree #3001, a planter and an auditor) where they matter, and are minimal where they do not.
 const hex = (digit: string, length: number): string => `0x${digit.repeat(length)}`;
 
-const PLANTER_ID = '00000000-0000-0000-0000-000000000001';
+export const PLANTER_ID = '00000000-0000-0000-0000-000000000001';
 
 export const AUDITOR_ID = '00000000-0000-0000-0000-000000000002';
 
-const CAMPAIGN = hex('c', 40);
+export const CAMPAIGN = hex('c', 40);
 
 export const TREE_ID = 3001;
 
