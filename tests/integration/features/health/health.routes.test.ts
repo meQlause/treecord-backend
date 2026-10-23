@@ -29,6 +29,12 @@ describe('health and readiness — ADR-017', () => {
     });
   }, CONTAINER_START_MS);
 
+  const appWith = (chain: () => Promise<bigint>) =>
+    createApp({
+      readiness: { database: () => pingDatabase(database), chain },
+      logUnexpected: () => undefined,
+    });
+
   afterAll(async () => {
     await database.destroy();
 
@@ -38,25 +44,19 @@ describe('health and readiness — ADR-017', () => {
   });
 
   it('GET /healthz answers 200 while the process runs', async () => {
-    const app = createApp({
-      readiness: { database: () => pingDatabase(database), chain: chainUp },
-    });
+    const app = appWith(chainUp);
 
     await request(app).get('/healthz').expect(200, { status: 'ok' });
   });
 
   it('GET /readyz answers 200 when PostgreSQL and the RPC are reachable', async () => {
-    const app = createApp({
-      readiness: { database: () => pingDatabase(database), chain: chainUp },
-    });
+    const app = appWith(chainUp);
 
     await request(app).get('/readyz').expect(200, { status: 'ready' });
   });
 
   it('GET /readyz answers 503 when the RPC is unreachable', async () => {
-    const app = createApp({
-      readiness: { database: () => pingDatabase(database), chain: chainDown },
-    });
+    const app = appWith(chainDown);
 
     await request(app).get('/readyz').expect(503, { status: 'not_ready' });
   });
@@ -64,9 +64,7 @@ describe('health and readiness — ADR-017', () => {
   it(
     'GET /readyz answers 503 with PostgreSQL stopped, while /healthz still answers 200',
     async () => {
-      const app = createApp({
-        readiness: { database: () => pingDatabase(database), chain: chainUp },
-      });
+      const app = appWith(chainUp);
 
       await postgres.stop();
       stopped = true;

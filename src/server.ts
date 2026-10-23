@@ -15,4 +15,5 @@ const chain = createChainClient(config.RPC_URL);
 
 createApp({
   readiness: { database: () => pingDatabase(database), chain: () => chain.getBlockNumber() },
+  logUnexpected: (error, requestId) => console.error('unexpected error', requestId, error),
 }).listen(config.PORT);
