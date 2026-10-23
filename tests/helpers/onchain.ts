@@ -233,7 +233,8 @@ export const startOnchain = async (anvilPort: number): Promise<Onchain> => {
     api: testApi(test.database, await fakePrivy(), {
       chainNow: chainClock(createPublicClient({ chain: foundry, transport: http(chain.rpcUrl) })),
       clock: () => new Date(),
-      env: minio.config,
+      // the attester key holds ATTESTER_ROLE on the local deployment, so the gateway accepts what the API signs
+      env: { ...minio.config, ATTESTER_PRIVATE_KEY: keys.attester },
     }),
     row: async (query) => (await query.execute(test.database)).rows[0],
     stop: async () => {
