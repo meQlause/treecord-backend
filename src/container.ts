@@ -5,6 +5,8 @@ import type { Logger } from 'pino';
 import type { PublicClient } from 'viem';
 import type { Config } from './config.js';
 import { registerAccounts, type AccountsCradle } from './features/accounts/accounts.container.js';
+import { registerAudit, type AuditCradle } from './features/audit/audit.container.js';
+import { auditRouter } from './features/audit/index.js';
 import {
   registerCampaigns,
   type CampaignsCradle,
@@ -42,7 +44,7 @@ import {
 } from './shared/auth/privy.js';
 import { createChainClient } from './shared/chain/client.js';
 import { createAttester } from './shared/chain/attester.js';
-import { blockTime, chainClock } from './shared/chain/clock.js';
+import { blockTime, chainClock, latestBlock } from './shared/chain/clock.js';
 import { createDatabase, type DatabaseClient } from './shared/db/database.js';
 import { authenticateIfPresent, type AuthOptions } from './shared/http/auth.js';
 import { createLogger } from './shared/http/logger.js';
@@ -56,6 +58,8 @@ type SharedCradle = {
   chain: PublicClient;
   /** The latest block's time: "now" for every deadline (ADR-015). */
   chainNow: () => Promise<Date>;
+  /** The latest block's number and hash (audit seeds, FR-182). */
+  latestBlock: () => Promise<{ number: string; hash: `0x${string}` }>;
   /** One block's timestamp, for mirror rows stored without it. */
   blockTime: (blockNumber: string) => Promise<Date>;
   /** The server clock; injected so tests fix it (SR-1). */
@@ -73,6 +77,7 @@ type SharedCradle = {
 export type Cradle = SharedCradle &
   AccountsCradle &
   FlagsCradle &
+  AuditCradle &
   OperationsCradle &
   JobsCradle &
   CampaignsCradle &
@@ -108,6 +113,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
     ).singleton(),
     chainNow: asFunction(({ chain }: Cradle) => chainClock(chain)).singleton(),
     blockTime: asFunction(({ chain }: Cradle) => blockTime(chain)).singleton(),
+    latestBlock: asFunction(({ chain }: Cradle) => latestBlock(chain)).singleton(),
     clock: asValue(() => new Date()),
     randomBytes: asValue((count: number) => new Uint8Array(randomBytes(count))),
     storage: asFunction(({ config: settings, clock }: Cradle) =>
@@ -127,18 +133,25 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
       }),
     ).singleton(),
   });
-  registerAccounts(container);
-  registerJobs(container);
-  registerCampaigns(container);
-  registerTrees(container);
-  registerReports(container);
-  registerCarbon(container);
-  registerDonor(container);
-  registerDevices(container);
-  registerPlanter(container);
-  registerEvidence(container);
-  registerFlags(container);
-  registerOperations(container);
+
+  // each feature's registrations, in dependency order
+  for (const register of [
+    registerAccounts,
+    registerJobs,
+    registerCampaigns,
+    registerTrees,
+    registerReports,
+    registerCarbon,
+    registerDonor,
+    registerDevices,
+    registerPlanter,
+    registerEvidence,
+    registerFlags,
+    registerOperations,
+    registerAudit,
+  ]) {
+    register(container);
+  }
 
   return container;
 };
@@ -174,6 +187,7 @@ export const privateRouters = ({
   campaignsService,
   flagsService,
   operationsService,
+  auditService,
 }: Cradle): Router[] => [
   accountsRouter(accountsService),
   jobsRouter(jobsService),
@@ -185,4 +199,5 @@ export const privateRouters = ({
   campaignsPrivateRouter(campaignsService),
   flagsRouter(flagsService),
   operationsRouter(operationsService),
+  auditRouter(auditService),
 ];

@@ -19,14 +19,17 @@ import {
 } from '../helpers/database.js';
 import { fakePrivy } from '../helpers/fake-privy.js';
 import {
-  aCampaign,
-  aJob,
-  aPlantedTree,
-  aProfile,
-  CAMPAIGN as TREE_CAMPAIGN,
-  theSpecies,
-  TREE_ID,
-} from '../fixtures/mirror.js';
+  CAMPAIGN,
+  ISSUED_TX,
+  matrixWorld,
+  METADATA_ID,
+  OPEN_FLAG_ID,
+  OPS_CAMPAIGN,
+  PLANTER_WALLET,
+  PLANTING_CAMPAIGN,
+  roleWallet,
+} from '../fixtures/matrix.js';
+import { aJob, aProfile, CAMPAIGN as TREE_CAMPAIGN, TREE_ID } from '../fixtures/mirror.js';
 
 const userOf = (role: Role): string => `did:privy:cm2matrix${role}000000000`;
 const OTHER_USER = 'did:privy:cm2matrixother0000000000';
@@ -120,22 +123,26 @@ const plantingInReview = async (): Promise<string> => {
   return row?.id ?? '';
 };
 
+// an open audit session on tree 3001's campaign, owned by `owner`
+const sessionOf = async (owner: Role | 'other'): Promise<Probe> => {
+  const [row] = (
+    await sql<{
+      id: string;
+    }>`insert into public.audit_sessions (auditor_profile_id, campaign_address, seed_block_number, seed_block_hash,
+        seed, population_tree_ids, sample_size)
+      values (${profileOf.get(owner)}, ${TREE_CAMPAIGN}, 1, ${ISSUED_TX}, ${ISSUED_TX}, array[${TREE_ID}]::bigint[], 1)
+      returning id`.execute(test.database)
+  ).rows;
+
+  return { method: 'get', path: `/api/v1/audit/sessions/${row?.id}` };
+};
+
 const jobOf = async (owner: Role | 'other'): Promise<Probe> => ({
   method: 'get',
   path: `/api/v1/jobs/${await aJob(test.database, profileOf.get(owner) ?? null)}`,
 });
 
-const CAMPAIGN = '0x00000000000000000000000000000000000000c1';
-// an Active campaign where the matrix planter (wallet 0x2222…) holds slot 1 with its tag
-const PLANTING_CAMPAIGN = '0x00000000000000000000000000000000000000c2';
-const PLANTER_WALLET = `0x${'2'.repeat(40)}`;
-const METADATA_ID = '7d5c9b8e-1f4a-4c2e-9a3b-6f0e2d1c4b5a';
-// an Active mahogany campaign, its anchor slots all unassigned, for the operator actions
-const OPS_CAMPAIGN = '0x00000000000000000000000000000000000000c3';
-// an open flag on tree 3001, which every role's wallet contributed to
-const OPEN_FLAG_ID = '1f6c2a9e-4b7d-4e15-9a3c-8d2e5f0b7a61';
 let announced = 0;
-const ISSUED_TX = `0x${'1'.repeat(64)}`;
 
 // Every route the composition root serves under /api/v1, and who may call it.
 const MATRIX: AccessMatrix = {
@@ -393,6 +400,21 @@ const MATRIX: AccessMatrix = {
     }),
     ok: 200,
   },
+  'POST /audit/sessions': {
+    allowed: ['auditor'],
+    probe: {
+      method: 'post',
+      path: '/api/v1/audit/sessions',
+      body: { campaign: TREE_CAMPAIGN, sampleSize: 1 },
+    },
+    ok: 201,
+  },
+  'GET /audit/sessions/:id': {
+    allowed: ['auditor'],
+    probe: sessionOf,
+    ok: 200,
+    foreign: () => sessionOf('other'),
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
@@ -411,48 +433,6 @@ const send = async (role: Role, { method, path, body, headers = {} }: Probe) =>
     .set({ ...(await api.signedIn(userOf(role))), ...headers })
     .send(body);
 
-// The wallet of the role at this index in ROLES: 0x1111… for the donor, and so on.
-const roleWallet = (index: number): string => `0x${String(index + 1).repeat(40)}`;
-
-// Every role's wallet contributed to tree 3001's campaign, and the tree has an open flag.
-const flaggableTree = async (): Promise<void> => {
-  for (const [index] of ROLES.entries()) {
-    await sql`insert into public.contributions (campaign_address, contributor_address, amount, total_raised_after,
-        block_number, block_time, log_index, tx_hash)
-      values (${TREE_CAMPAIGN}, ${roleWallet(index)}, 1, 1, 1, now(), ${index}, ${ISSUED_TX})`.execute(
-      test.database,
-    );
-  }
-
-  await sql`insert into public.flags (id, tree_id, campaign_address, flagger_address, reason_text, reason_hash, status)
-    values (${OPEN_FLAG_ID}, ${TREE_ID}, ${TREE_CAMPAIGN}, ${PLANTER_WALLET}, 'Matrix', ${ISSUED_TX}, 'open')`.execute(
-    test.database,
-  );
-};
-
-// One issued batch and one retirement from it, on CAMPAIGN.
-const carbonRecords = async (): Promise<void> => {
-  await sql`insert into public.carbon_batches (batch_id, campaign_address, amount, registry, serial_start,
-      serial_end, vintage, issued_block, issued_tx, issued_at)
-    values (1, ${CAMPAIGN}, 100, 'Verra', 'V-1', 'V-100', 2026, 1, ${ISSUED_TX}, now())`.execute(
-    test.database,
-  );
-  await sql`insert into public.retirements (retirement_id, batch_id, amount, holder_address, beneficiary, purpose,
-      retired_at, log_index, tx_hash)
-    values (1, 1, 10, ${CAMPAIGN}, 'PT Hijau Lestari', '', now(), 0, ${ISSUED_TX})`.execute(
-    test.database,
-  );
-};
-
-// OPS_CAMPAIGN, no slot taken yet; the species must be seeded first.
-const operationsCampaign = async (): Promise<void> => {
-  await aCampaign(test.database, {
-    address: OPS_CAMPAIGN,
-    status: 'active',
-    species_code: 'SWIETENIA_MACROPHYLLA',
-  });
-};
-
 // One profile per role; roles past donor are granted by hand, as in production.
 beforeAll(async () => {
   test = await startMigratedDatabase();
@@ -466,23 +446,7 @@ beforeAll(async () => {
   }
 
   profileOf.set('other', await aProfile(test.database, 'planter', OTHER_USER));
-  await aCampaign(test.database, { address: CAMPAIGN });
-  await aPlantedTree(test.database);
-  await aCampaign(test.database, { address: PLANTING_CAMPAIGN, status: 'active' });
-
-  await flaggableTree();
-  await theSpecies(test.database);
-  await operationsCampaign();
-  await sql`insert into public.campaign_metadata (id, creator_profile_id, title, species_code, region_name,
-      region_center_lat, region_center_lon, region_radius_m)
-    values (${METADATA_ID}, ${profileOf.get('donor')}, 'Matrix', 'PERSEA_AMERICANA', 'Matrix', 0, 0, 100)`.execute(
-    test.database,
-  );
-  await sql`insert into public.slots (campaign_address, slot_id, kind, status, planter_address)
-    values (${PLANTING_CAMPAIGN}, 1, 'open', 'claimed', ${PLANTER_WALLET})`.execute(test.database);
-  await sql`insert into public.slot_tags (campaign_address, slot_id, code)
-    values (${PLANTING_CAMPAIGN}, 1, 'TC-MATR-2XAA')`.execute(test.database);
-  await carbonRecords();
+  await matrixWorld(test.database, profileOf.get('donor') ?? '');
 }, CONTAINER_START_MS);
 
 afterAll(async () => {

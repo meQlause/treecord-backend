@@ -1,4 +1,4 @@
-import type { PublicClient } from 'viem';
+import type { Hex, PublicClient } from 'viem';
 
 const MS_PER_SECOND = 1000;
 
@@ -14,3 +14,11 @@ export const blockTime =
       Number((await chain.getBlock({ blockNumber: BigInt(blockNumber) })).timestamp) *
         MS_PER_SECOND,
     );
+
+/** FR-182: the latest block's number and hash, from the chain itself (never the mirror), the seed of an audit sample. */
+export const latestBlock =
+  (chain: PublicClient) => async (): Promise<{ number: string; hash: Hex }> => {
+    const block = await chain.getBlock({ blockTag: 'latest' });
+
+    return { number: block.number.toString(), hash: block.hash };
+  };
