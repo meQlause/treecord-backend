@@ -246,8 +246,40 @@ const certificateReads = (database: Kysely<DB>) => ({
       .executeTakeFirst(),
 });
 
+const REGISTRY_COLUMNS = [
+  'retirement_id',
+  'registry_retirement_status',
+  'registry_reference',
+  'updated_at',
+] as const;
+
+/** §6: the registry status, the one retirement column the API writes (ADR-015). */
+const registryWrites = (database: Kysely<DB>) => ({
+  /** pending → done, once; undefined when the row is absent or already done. */
+  markRegistryRetired: (retirementId: string, reference: string | null) =>
+    database
+      .updateTable('retirements')
+      .set({
+        registry_retirement_status: 'done',
+        registry_reference: reference,
+        updated_at: sql`now()`,
+      })
+      .where('retirement_id', '=', retirementId)
+      .where('registry_retirement_status', '=', 'pending')
+      .returning(REGISTRY_COLUMNS)
+      .executeTakeFirst(),
+
+  registryRetirement: (retirementId: string) =>
+    database
+      .selectFrom('retirements')
+      .select(REGISTRY_COLUMNS)
+      .where('retirement_id', '=', retirementId)
+      .executeTakeFirst(),
+});
+
 export const carbonRepository = (database: Kysely<DB>, ledger: string) => ({
   ...catalogReads(database, ledger),
+  ...registryWrites(database),
   ...holdingReads(database),
   ...walletBatchReads(database),
   ...certificateReads(database),
@@ -266,5 +298,7 @@ export type HoldingRows = {
   reservations: Rows<'reservations'>;
   balances: Rows<'balances'>;
 };
+
+export type RegistryRow = NonNullable<Rows<'registryRetirement'>>;
 
 export type CertificateRow = NonNullable<Rows<'certificate'>>;

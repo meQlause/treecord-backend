@@ -359,6 +359,15 @@ const MATRIX: AccessMatrix = {
     },
     ok: 202,
   },
+  'POST /operator/carbon/retirements/:retirementId/registry-retirement': {
+    allowed: ['operator'],
+    probe: {
+      method: 'post',
+      path: '/api/v1/operator/carbon/retirements/1/registry-retirement',
+      body: { reference: 'Matrix' },
+    },
+    ok: 200,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,

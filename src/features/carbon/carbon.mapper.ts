@@ -1,5 +1,11 @@
 import { txUrl } from '../../shared/chain/explorer.js';
-import type { BatchRow, CertificateRow, HoldingRows, RetirementRow } from './carbon.repository.js';
+import type {
+  BatchRow,
+  CertificateRow,
+  HoldingRows,
+  RegistryRow,
+  RetirementRow,
+} from './carbon.repository.js';
 import { availability } from './carbon.rules.js';
 
 type SpeciesColumns = { species_code: string | null; species_name: string | null };
@@ -116,3 +122,10 @@ export const toCertificate = (row: CertificateRow, chainId: number) => {
     },
   };
 };
+
+/** §6 response. */
+export const toRegistryRetirement = (row: RegistryRow) => ({
+  retirementId: row.retirement_id,
+  registryRetirement: { status: row.registry_retirement_status, reference: row.registry_reference },
+  updatedAt: row.updated_at.toISOString(),
+});

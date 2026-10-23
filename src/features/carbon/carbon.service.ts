@@ -1,5 +1,11 @@
 import { DomainError } from '../../shared/errors.js';
-import { toBatch, toCertificate, toHoldings, toRetirement } from './carbon.mapper.js';
+import {
+  toBatch,
+  toCertificate,
+  toHoldings,
+  toRegistryRetirement,
+  toRetirement,
+} from './carbon.mapper.js';
 import type { DatabaseClient } from '../../shared/db/database.js';
 import { holdingReads, type BatchRow, type CarbonRepository } from './carbon.repository.js';
 import {
@@ -74,6 +80,30 @@ const retirementPage =
   };
 
 /** docs/BE/features/carbon.md §1–§5: the carbon catalogue, a wallet's holdings and the public certificate. */
+/** §6, FR-240: done once; the same reference again is idempotent, another one is refused. */
+const markRegistryRetired =
+  (repository: CarbonRepository) => async (retirementId: string, reference: string | null) => {
+    const updated = await repository.markRegistryRetired(retirementId, reference);
+
+    if (updated !== undefined) {
+      return toRegistryRetirement(updated);
+    }
+
+    const current = await repository.registryRetirement(retirementId);
+
+    if (current === undefined) {
+      throw new DomainError('not_found');
+    }
+
+    if (current.registry_reference !== reference) {
+      throw new DomainError('registry_retirement_done', {
+        reference: current.registry_reference,
+      });
+    }
+
+    return { ...toRegistryRetirement(current), idempotent: true };
+  };
+
 export const createCarbonService = (dependencies: CarbonDependencies) => {
   const { repository, chainId } = dependencies;
   const issuedAt = issuedAtOf(dependencies);
@@ -151,6 +181,8 @@ export const createCarbonService = (dependencies: CarbonDependencies) => {
 
       return toCertificate(row, chainId);
     },
+
+    markRegistryRetired: markRegistryRetired(repository),
   };
 };
 

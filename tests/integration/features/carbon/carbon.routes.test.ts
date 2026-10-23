@@ -8,6 +8,7 @@ import {
   type TestDatabase,
 } from '../../../helpers/database.js';
 import { fakePrivy, type FakePrivy } from '../../../helpers/fake-privy.js';
+import { aProfile } from '../../../fixtures/mirror.js';
 import {
   ALEX,
   ALEX_WALLET,
@@ -332,4 +333,80 @@ describe('the certificate', () => {
     expect(response.status).toBe(status);
     expect(response.body.error.code).toBe(code);
   });
+});
+
+// carbon.md §6, FR-240.
+describe('POST /api/v1/operator/carbon/retirements/:retirementId/registry-retirement', () => {
+  const RAKA = 'did:privy:cm2raka0000000000000000';
+  const REFERENCE = 'SRN-RET-2026-000042';
+  const mark = async (retirementId: string, body: object, userId = RAKA) =>
+    request(api.app)
+      .post(`/api/v1/operator/carbon/retirements/${retirementId}/registry-retirement`)
+      .set(await api.signedIn(userId))
+      .send(body);
+
+  beforeAll(async () => {
+    await aProfile(test.database, 'operator', RAKA);
+  });
+
+  it('marks retirement 1 done with the trimmed reference; the same call again is idempotent', async () => {
+    const done = await mark('1', { reference: ` ${REFERENCE} ` });
+    const again = await mark('1', { reference: REFERENCE });
+
+    expect(done.status).toBe(200);
+    expect(done.body).toEqual({
+      retirementId: '1',
+      registryRetirement: { status: 'done', reference: REFERENCE },
+      updatedAt: expect.any(String),
+    });
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual({ ...done.body, idempotent: true });
+  });
+
+  it('another reference on a done retirement answers 409 registry_retirement_done naming the stored one', async () => {
+    const response = await mark('1', { reference: 'SRN-RET-2026-000099' });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatchObject({
+      code: 'registry_retirement_done',
+      details: { reference: REFERENCE },
+    });
+  });
+
+  it('the reference is optional: done without one, and then a reference is refused', async () => {
+    const done = await mark('2', {});
+    const later = await mark('2', { reference: REFERENCE });
+
+    expect(done.body.registryRetirement).toEqual({ status: 'done', reference: null });
+    expect(later.body.error).toMatchObject({
+      code: 'registry_retirement_done',
+      details: { reference: null },
+    });
+  });
+
+  it.each([
+    { name: 'an unknown retirement', retirementId: '99', status: 404, code: 'not_found' },
+    { name: 'retirement 0', retirementId: '0', status: 400, code: 'invalid_path' },
+    {
+      name: 'a blank reference',
+      body: { reference: '   ' },
+      status: 400,
+      code: 'validation_error',
+    },
+    {
+      name: 'a status in the body',
+      body: { status: 'pending' },
+      status: 400,
+      code: 'validation_error',
+    },
+    { name: 'a donor', userId: ALEX, status: 403, code: 'forbidden_role' },
+  ])(
+    '$name answers $status $code',
+    async ({ retirementId = '99', body = {}, userId = RAKA, status, code }) => {
+      const response = await mark(retirementId, body, userId);
+
+      expect(response.status).toBe(status);
+      expect(response.body.error.code).toBe(code);
+    },
+  );
 });
