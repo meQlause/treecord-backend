@@ -114,10 +114,18 @@ describe('milestoneStatus (FR-056): the first rule that applies', () => {
     },
     { name: 'inside the window', record: settled, tree: 'alive', now: CHAIN_NOW, is: 'open' },
     {
-      name: 'at the close, which is excluded',
+      // Campaign._window reverts only on < opensAt or > closesAt, so a check-in at the close still lands (FR-137)
+      name: 'at the close, which still counts',
       record: settled,
       tree: 'alive',
       now: window.closesAt,
+      is: 'open',
+    },
+    {
+      name: 'one second after the close',
+      record: settled,
+      tree: 'alive',
+      now: window.closesAt + 1000,
       is: 'missed',
     },
   ])('$name', ({ record, tree, now, is }) => {

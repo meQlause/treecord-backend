@@ -110,7 +110,8 @@ export const milestoneStatus = ({
     return 'upcoming';
   }
 
-  return now < closesAt ? 'open' : 'missed';
+  // both ends count: the contract rejects a check-in only before opensAt or after closesAt (trees.md §1, FR-137)
+  return now <= closesAt ? 'open' : 'missed';
 };
 
 /** FR-057: Σ of decimal-string amounts, as bigint (REG-001). */
