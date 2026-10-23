@@ -1,5 +1,5 @@
-import { sql, type Kysely } from 'kysely';
-import type { DB } from '../../generated/db.js';
+import { sql, type Insertable, type Kysely } from 'kysely';
+import type { DB, Submissions } from '../../generated/db.js';
 
 // docs/BE/features/evidence.md §1: the facts behind one capture target. Ids are text (REG-001).
 
@@ -135,11 +135,37 @@ const treeReads = (database: Kysely<DB>) => ({
       .executeTakeFirstOrThrow(),
 });
 
+/** §2: the upload link's own writes and reads. */
+const linkReads = (database: Kysely<DB>) => ({
+  /** FR-132: whoever already holds a video hash, rejected and failed rows included. */
+  holderOf: (sha256: string) =>
+    database
+      .selectFrom('submissions')
+      .select([
+        'id',
+        'profile_id',
+        'status',
+        'kind',
+        'campaign_address',
+        'slot_id',
+        sql<string | null>`tree_id::text`.as('tree_id'),
+        'milestone',
+      ])
+      .where('video_sha256', '=', sha256)
+      .executeTakeFirst(),
+
+  /** §2: the queued row; the video hash key is the uniqueness check (concurrency note). */
+  insertQueued: async (values: Insertable<Submissions>): Promise<void> => {
+    await database.insertInto('submissions').values(values).execute();
+  },
+});
+
 export { IN_FLIGHT };
 
 export const evidenceRepository = (database: Kysely<DB>) => ({
   ...slotReads(database),
   ...treeReads(database),
+  ...linkReads(database),
 });
 
 export type EvidenceRepository = ReturnType<typeof evidenceRepository>;
@@ -151,3 +177,5 @@ export type SlotTarget = NonNullable<Rows<'slotTarget'>>;
 export type TreeTarget = NonNullable<Rows<'treeTarget'>>;
 
 export type HeldRow = NonNullable<Rows<'livePlanting'>>;
+
+export type HolderRow = NonNullable<Rows<'holderOf'>>;

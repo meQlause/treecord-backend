@@ -1,8 +1,13 @@
-import { MILESTONE_DUE_UNITS } from '../../../generated/frozen/constants.js';
+import {
+  MILESTONE_DUE_UNITS,
+  SERVER_VIDEO_MAX_SEC,
+  SERVER_VIDEO_MIN_SEC,
+} from '../../../generated/frozen/constants.js';
 import { isoInstant as iso } from '../../../shared/instant.js';
 
 // docs/BE/features/evidence-prechecks.md: pure rules, every instant and row passed in (epoch ms). This file holds the
-// target stage (checks 9–15, the capture blocks of S16–S19); B5b adds the link, submit and approve stages.
+// target stage (checks 9–15, the capture blocks of S16–S19) and the link stage (4, 8, 9–13, 15); submit and approve
+// come with their endpoints.
 
 const MS_PER_SECOND = 1000;
 // a held submission is shown by the first eight characters of its id (S21 "5c1e9a7d · needs_review")
@@ -11,6 +16,9 @@ const SHORT_ID = 8;
 export type EvidenceKind = 'PLANTED' | 'ALIVE' | 'DEAD' | 'REPLANTED';
 
 export type Reason =
+  | 'duplicate_video'
+  | 'video_too_short'
+  | 'video_too_long'
   | 'slot_not_owned'
   | 'tree_not_owned'
   | 'campaign_not_active'
@@ -23,6 +31,8 @@ export type Reason =
   | 'tag_missing';
 
 type CheckId =
+  | 'unique_video'
+  | 'duration'
   | 'ownership'
   | 'campaign_status'
   | 'tree_status'
@@ -227,6 +237,55 @@ export const targetChecks = (facts: TargetFacts): CheckRow[] => {
     tag(facts),
   ];
 };
+
+/** Another submission already holding the announced video hash (FR-132). */
+type HashHolder = { profileId: string; status: string; sameTarget: boolean };
+
+export type LinkFacts = TargetFacts & {
+  callerProfileId: string;
+  durationSec: number | null;
+  existingByHash: HashHolder | null;
+};
+
+/** §2 check 4 at the link: the hash is unused, except by the caller's own queued row for this target (the retry). */
+const uniqueVideo = ({ existingByHash, callerProfileId }: LinkFacts): CheckRow => {
+  const retry =
+    existingByHash !== null &&
+    existingByHash.profileId === callerProfileId &&
+    existingByHash.status === 'queued' &&
+    existingByHash.sameTarget;
+
+  return row('unique_video', existingByHash === null || retry, {
+    value: existingByHash === null ? 'first use' : `held by a ${existingByHash.status} submission`,
+    limit: 'unused by any earlier submission',
+    reason: 'duplicate_video',
+  });
+};
+
+/** §2 check 8: 4–12 s, both edges pass; an unknown duration is not checked (FR-136 "when given"). */
+const duration = ({ durationSec }: LinkFacts): CheckRow => {
+  const limit = `${SERVER_VIDEO_MIN_SEC}–${SERVER_VIDEO_MAX_SEC} s`;
+
+  if (durationSec === null) {
+    return { check: 'duration', ok: null, value: 'unknown', limit, reason: null };
+  }
+
+  return row(
+    'duration',
+    durationSec >= SERVER_VIDEO_MIN_SEC && durationSec <= SERVER_VIDEO_MAX_SEC,
+    {
+      value: `${durationSec.toFixed(1)} s`,
+      limit,
+      reason: durationSec < SERVER_VIDEO_MIN_SEC ? 'video_too_short' : 'video_too_long',
+    },
+  );
+};
+
+/** §1 "Link": the upload link's checks in FR-130 order; the challenge never blocks here (FR-141). */
+export const linkChecks = (facts: LinkFacts): CheckRow[] =>
+  [uniqueVideo(facts), duration(facts), ...targetChecks(facts)].filter(
+    (checked) => checked.check !== 'challenge',
+  );
 
 /** error-handling §4.2: every failing row's reason, in FR-130 order. */
 export const reasonsOf = (rows: CheckRow[]): Reason[] =>

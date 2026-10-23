@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  linkChecks,
   milestoneWindow,
   reasonsOf,
   targetChecks,
+  type LinkFacts,
   type TargetFacts,
 } from '../../../../../src/features/evidence/prechecks/prechecks.rules.js';
 
@@ -140,5 +142,75 @@ describe('target prechecks: each reason', () => {
         issuedTag: null,
       }),
     ).toEqual(['tree_not_owned', 'milestone_not_open', 'milestone_already_done', 'tag_missing']);
+  });
+});
+
+const LINK: LinkFacts = {
+  ...ALIVE,
+  callerProfileId: 'sari',
+  durationSec: 7.2,
+  existingByHash: null,
+};
+
+const linkReasons = (change: Partial<LinkFacts>) => reasonsOf(linkChecks({ ...LINK, ...change }));
+
+// docs/BE/features/evidence-prechecks.md §1 "Link": unique_video, duration, then the target checks; no challenge row.
+describe('link prechecks', () => {
+  it('uses unique_video and duration before the target checks, and drops the challenge row', () => {
+    expect(linkChecks({ ...LINK, openChallengeCode: 'R4M9' }).map(({ check }) => check)).toEqual([
+      'unique_video',
+      'duration',
+      'ownership',
+      'tree_status',
+      'milestone_window',
+      'target_free',
+      'tag',
+    ]);
+  });
+
+  it.each([
+    [3.9, ['video_too_short']],
+    [4, []],
+    [12, []],
+    [12.1, ['video_too_long']],
+  ])('a %s s video: %j', (seconds, expected) => {
+    expect(linkReasons({ durationSec: seconds })).toEqual(expected);
+  });
+
+  it('an unknown duration is not checked, never passed', () => {
+    const [, checked] = linkChecks({ ...LINK, durationSec: null });
+
+    expect(checked).toEqual({
+      check: 'duration',
+      ok: null,
+      value: 'unknown',
+      limit: '4–12 s',
+      reason: null,
+    });
+  });
+
+  it.each([
+    [
+      'the caller re-sending the same queued upload',
+      { profileId: 'sari', status: 'queued', sameTarget: true },
+      [],
+    ],
+    [
+      'the caller, for another target',
+      { profileId: 'sari', status: 'queued', sameTarget: false },
+      ['duplicate_video'],
+    ],
+    [
+      'a rejected video, never accepted again',
+      { profileId: 'sari', status: 'rejected', sameTarget: true },
+      ['duplicate_video'],
+    ],
+    [
+      'someone else',
+      { profileId: 'dewi', status: 'queued', sameTarget: true },
+      ['duplicate_video'],
+    ],
+  ])('a hash already held by %s', (_case, holder, expected) => {
+    expect(linkReasons({ existingByHash: holder })).toEqual(expected);
   });
 });

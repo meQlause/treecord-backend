@@ -1,24 +1,25 @@
-import { MILESTONE_DUE_UNITS } from '../../generated/frozen/constants.js';
+import { randomUUID } from 'node:crypto';
 import type { DatabaseClient } from '../../shared/db/database.js';
 import { DomainError } from '../../shared/errors.js';
+import type { Storage } from '../../shared/storage/storage.js';
 import { issueSlotTags } from '../planter/index.js';
+import {
+  toPlantingTarget,
+  toTreeTarget,
+  type PlantingTarget,
+  type TreeTargetFacts,
+} from './evidence.mapper.js';
 import {
   evidenceRepository,
   IN_FLIGHT,
   type EvidenceRepository,
   type HeldRow,
-  type SlotTarget,
+  type HolderRow,
   type TreeTarget,
 } from './evidence.repository.js';
-import type { CaptureTargetQuery } from './evidence.schema.js';
-import {
-  currentMilestone,
-  reasonsOf,
-  targetChecks,
-  type TargetFacts,
-} from './prechecks/prechecks.rules.js';
+import type { CaptureTargetQuery, UploadUrlBody } from './evidence.schema.js';
+import { currentMilestone, linkChecks, reasonsOf } from './prechecks/prechecks.rules.js';
 
-/** The kinds whose target is a tree. */
 type TreeKind = 'ALIVE' | 'DEAD' | 'REPLANTED';
 
 /** The signed-in planter. */
@@ -26,6 +27,7 @@ type Caller = { id: string; wallet_address: string | null };
 
 type EvidenceDependencies = {
   database: DatabaseClient;
+  storage: Pick<Storage, 'presignPut'>;
   /** The latest block's time: windows and replant deadlines (REG-009). */
   chainNow: () => Promise<Date>;
   /** The server clock: challenge expiry. */
@@ -33,8 +35,13 @@ type EvidenceDependencies = {
   randomBytes: (count: number) => Uint8Array;
 };
 
-// FR-099: a check-in is recorded within 15 m of the tree
-const CHECK_IN_RADIUS_M = 15;
+/** How a target's tag is found: issued now for its own planter at the capture target, read only otherwise. */
+type TagLookup = (campaign: string, slotId: number, owned: boolean) => Promise<string | null>;
+
+type Scope = { repository: EvidenceRepository; wallet: string; chainTime: Date; tagFor: TagLookup };
+
+const EVIDENCE_BUCKET = 'evidence';
+const UNIQUE_VIOLATION = '23505';
 
 const walletOf = (caller: Caller): string => {
   if (caller.wallet_address === null) {
@@ -44,156 +51,83 @@ const walletOf = (caller: Caller): string => {
   return caller.wallet_address;
 };
 
-const monthOf = (milestone: number): number => MILESTONE_DUE_UNITS[milestone] ?? 0;
+/** A planting target's facts: the campaign slot. */
+const loadPlanting = async (
+  { repository, wallet, chainTime, tagFor }: Scope,
+  campaign: string,
+  slotId: string,
+): Promise<PlantingTarget> => {
+  const slot = await repository.slotTarget(campaign, slotId);
 
-/** planter.md capture block. */
-const captureOf = (facts: Omit<TargetFacts, 'held'>, held: HeldRow | undefined) => {
-  const reasons = reasonsOf(
-    targetChecks({ ...facts, held: held === undefined ? null : { ...held } }),
-  );
-
-  return {
-    allowed: reasons.length === 0,
-    reasons,
-    held:
-      held === undefined
-        ? null
-        : {
-            id: held.id,
-            status: held.status,
-            milestone: held.milestone,
-            month: monthOf(held.milestone),
-            deviceId: held.device_id,
-          },
-  };
-};
-
-const campaignOf = (target: SlotTarget | TreeTarget) => ({
-  address: target.address,
-  title: target.title,
-  regionName: target.region_name,
-  regionRadiusM: target.region_radius_m,
-});
-
-type TargetScope = {
-  repository: EvidenceRepository;
-  wallet: string;
-  chainTime: Date;
-  /** The tag: issued now for the slot's own planter, read only for anyone else (evidence §1). */
-  tagFor: (campaign: string, slotId: number, owned: boolean) => Promise<string | null>;
-};
-
-/** §1 for PLANTED: the campaign slot, its region as the reference. */
-const plantingTarget = async (
-  { repository, wallet, chainTime, tagFor }: TargetScope,
-  { campaign, slotId }: { campaign: string; slotId: string },
-) => {
-  const target = await repository.slotTarget(campaign, slotId);
-
-  if (target === undefined || target.slot_id === null) {
+  if (slot === undefined || slot.slot_id === null) {
     throw new DomainError('not_found');
   }
 
-  const owned = target.planter_address === wallet;
   const [tag, held] = await Promise.all([
-    tagFor(campaign, target.slot_id, owned),
-    repository.livePlanting(campaign, target.slot_id),
+    tagFor(campaign, slot.slot_id, slot.planter_address === wallet),
+    repository.livePlanting(campaign, slot.slot_id),
   ]);
-  const facts: Omit<TargetFacts, 'held'> = {
-    kind: 'PLANTED',
-    callerWallet: wallet,
-    target: { label: `Slot #${slotId}`, planterAddress: target.planter_address },
-    campaignStatus: target.campaign_status,
-    tree: null,
-    milestone: null,
-    chainTime: chainTime.getTime(),
-    mirrored: target.planted_tree !== null,
-    openChallengeCode: null,
-    issuedTag: tag,
-  };
 
   return {
-    kind: 'PLANTED',
+    slot,
     slotId,
-    treeId: target.planted_tree,
-    milestone: 0,
-    month: 0,
-    campaign: campaignOf(target),
-    tag,
-    challenge: null,
-    reference:
-      target.region_center_lat === null || target.region_center_lon === null
-        ? null
-        : {
-            kind: 'region',
-            lat: target.region_center_lat,
-            lon: target.region_center_lon,
-            radiusM: target.region_radius_m,
-          },
-    ...captureOf(facts, held),
-    chainTime: chainTime.toISOString(),
+    held,
+    facts: {
+      kind: 'PLANTED',
+      callerWallet: wallet,
+      target: { label: `Slot #${slotId}`, planterAddress: slot.planter_address },
+      campaignStatus: slot.campaign_status,
+      tree: null,
+      milestone: null,
+      chainTime: chainTime.getTime(),
+      held: held ?? null,
+      mirrored: slot.planted_tree !== null,
+      openChallengeCode: null,
+      issuedTag: tag,
+    },
   };
 };
 
-/** The live submission holding the target: the month's check-in for ALIVE, any DEAD or REPLANTED in flight else. */
-const heldFor = (kind: TreeKind, live: (HeldRow & { kind: string })[], current: number | null) =>
+/** The live submission holding a tree target: the month's check-in for ALIVE, any DEAD or REPLANTED in flight else. */
+const heldFor = (kind: TreeKind, live: (HeldRow & { kind: string })[], milestone: number | null) =>
   live.find((row) =>
     kind === 'ALIVE'
-      ? row.kind === 'ALIVE' && row.milestone === current
+      ? row.kind === 'ALIVE' && row.milestone === milestone
       : (row.kind === 'DEAD' || row.kind === 'REPLANTED') &&
         (IN_FLIGHT as readonly string[]).includes(row.status),
   );
 
-const challengeOf = (challenge: { code: string; expires_at: Date } | undefined) =>
-  challenge === undefined
-    ? null
-    : {
-        code: challenge.code,
-        qr: `TCH-${challenge.code}`,
-        expiresAt: challenge.expires_at.toISOString(),
-      };
-
-const treeReference = (location: { lat: number | null; lon: number | null } | null) =>
-  location === null || location.lat === null || location.lon === null
-    ? null
-    : { kind: 'tree', lat: location.lat, lon: location.lon, radiusM: CHECK_IN_RADIUS_M };
-
-/** The capture facts of a tree target. */
-const treeFacts = (
-  tree: TreeTarget,
-  scope: {
-    kind: TreeKind;
-    wallet: string;
-    milestone: number | null;
-    chainTime: Date;
-    challengeCode: string | null;
-    tag: string | null;
-  },
-): Omit<TargetFacts, 'held'> => ({
-  kind: scope.kind,
-  callerWallet: scope.wallet,
-  target: { label: `Tree #${tree.tree_id}`, planterAddress: tree.planter_address },
-  campaignStatus: tree.campaign_status,
-  tree: {
-    status: tree.status,
-    replantDeadline: tree.replant_deadline?.getTime() ?? null,
-    plantedAt: tree.planted_at.getTime(),
-    pausedSeconds: tree.paused_seconds,
-    unitSeconds: tree.unit_seconds,
-  },
-  milestone: scope.milestone,
-  chainTime: scope.chainTime.getTime(),
-  mirrored: false,
-  openChallengeCode: scope.challengeCode,
-  issuedTag: scope.tag,
+const treeTimingOf = (tree: TreeTarget) => ({
+  status: tree.status,
+  replantDeadline: tree.replant_deadline?.getTime() ?? null,
+  plantedAt: tree.planted_at.getTime(),
+  pausedSeconds: tree.paused_seconds,
+  unitSeconds: tree.unit_seconds,
 });
 
-/** §1 for ALIVE, DEAD and REPLANTED: the tree; its own location goes only to its planter (NFR-006). */
-const treeTarget = async (
-  { repository, wallet, chainTime, tagFor }: TargetScope,
-  { kind, treeId }: { kind: TreeKind; treeId: string },
-  now: Date,
-) => {
+/** ALIVE checks a milestone: the one the link names, else the tree's current one. Other kinds check none. */
+const askedMilestone = (
+  kind: TreeKind,
+  milestone: number | undefined,
+  settled: { paid: number[]; forfeited: number[] },
+): number | null => {
+  if (kind !== 'ALIVE') {
+    return null;
+  }
+
+  return milestone ?? currentMilestone(settled);
+};
+
+/** A tree target's facts. `milestone` is the one asked for (the link), else the tree's current one (the target). */
+const loadTree = async (
+  { repository, wallet, chainTime, tagFor }: Scope,
+  {
+    kind,
+    treeId,
+    milestone,
+    now,
+  }: { kind: TreeKind; treeId: string; milestone?: number; now: Date },
+): Promise<TreeTargetFacts> => {
   const tree = await repository.treeTarget(treeId);
 
   if (tree === undefined) {
@@ -208,61 +142,203 @@ const treeTarget = async (
     repository.openChallenge(treeId, now),
     owned ? repository.treeLocation(treeId) : null,
   ]);
-  const settled = {
-    paid: payouts.map((row) => row.milestone),
+  const paid = payouts.map((row) => row.milestone);
+  const asked = askedMilestone(kind, milestone, {
+    paid,
     forfeited: forfeits.map((row) => row.milestone),
-  };
-  const current = currentMilestone(settled);
-  const held = heldFor(kind, live, current);
-  const facts = treeFacts(tree, {
-    kind,
-    wallet,
-    milestone: kind === 'ALIVE' ? current : null,
-    chainTime,
-    challengeCode: challenge?.code ?? null,
-    tag,
   });
-  // the index the payload must sign (FR-103): the current milestone for ALIVE, 0 otherwise
-  const milestone = facts.milestone ?? 0;
+  const held = heldFor(kind, live, asked);
 
   return {
-    kind,
-    slotId: null,
-    treeId,
-    milestone,
-    month: monthOf(milestone),
-    campaign: campaignOf(tree),
-    tag,
-    challenge: challengeOf(challenge),
-    reference: treeReference(location),
-    ...captureOf(facts, held),
-    chainTime: chainTime.toISOString(),
+    tree,
+    held,
+    challenge,
+    location,
+    facts: {
+      kind,
+      callerWallet: wallet,
+      target: { label: `Tree #${treeId}`, planterAddress: tree.planter_address },
+      campaignStatus: tree.campaign_status,
+      tree: treeTimingOf(tree),
+      milestone: asked,
+      chainTime: chainTime.getTime(),
+      held: held ?? null,
+      mirrored: asked !== null && paid.includes(asked),
+      openChallengeCode: challenge?.code ?? null,
+      issuedTag: tag,
+    },
+  };
+};
+
+/** FR-132: does an existing holder of the hash hold it for this very target? */
+const sameTarget = (holder: HolderRow, body: UploadUrlBody): boolean =>
+  holder.kind === body.kind &&
+  holder.campaign_address === body.campaign &&
+  holder.milestone === body.milestone &&
+  (body.kind === 'PLANTED'
+    ? String(holder.slot_id) === body.slotId
+    : holder.tree_id === body.treeId);
+
+/** The hex SHA-256 the planter announced, as the base64 S3 checks the upload against. */
+const base64Of = (hex: string): string => Buffer.from(hex, 'hex').toString('base64');
+
+/** §2 write: the queued row, its id generated first so the video path can carry it (ADR-020). */
+const queuedRow = (caller: Caller, body: UploadUrlBody, submissionId: string) => ({
+  id: submissionId,
+  profile_id: caller.id,
+  campaign_address: body.campaign,
+  slot_id: body.kind === 'PLANTED' ? Number(body.slotId) : null,
+  tree_id: body.kind === 'PLANTED' ? null : body.treeId,
+  kind: body.kind,
+  milestone: body.milestone,
+  video_sha256: body.sha256,
+  size_bytes: body.sizeBytes,
+  duration_sec: body.durationSec === null ? null : String(body.durationSec),
+  video_path: `${caller.id}/${submissionId}.mp4`,
+  status: 'queued' as const,
+});
+
+/** FR-132: the caller's own queued row for this video and target is a retry, not a duplicate. */
+const isRetry = (
+  holder: HolderRow | undefined,
+  caller: Caller,
+  body: UploadUrlBody,
+): holder is HolderRow =>
+  holder !== undefined &&
+  holder.profile_id === caller.id &&
+  holder.status === 'queued' &&
+  sameTarget(holder, body);
+
+const hashFact = (holder: HolderRow | undefined, body: UploadUrlBody) =>
+  holder === undefined
+    ? null
+    : { profileId: holder.profile_id, status: holder.status, sameTarget: sameTarget(holder, body) };
+
+type Services = EvidenceDependencies & { repository: EvidenceRepository };
+
+/** §1: a read; a blocked target is a 200 with its reasons. Its own planter's missing tag is issued first. */
+const captureTargetOf =
+  ({ repository, database, randomBytes, chainNow, now }: Services) =>
+  async (caller: Caller, query: CaptureTargetQuery) => {
+    const chainTime = await chainNow();
+    const tagFor: TagLookup = async (campaign, slotId, owned) =>
+      owned
+        ? ((await issueSlotTags(database, randomBytes, [{ campaign, slotId }])).get(
+            `${campaign}:${slotId}`,
+          )?.code ?? null)
+        : repository.tagOf(campaign, slotId);
+    const scope = { repository, wallet: walletOf(caller), chainTime, tagFor };
+
+    return query.kind === 'PLANTED'
+      ? toPlantingTarget(await loadPlanting(scope, query.campaign, query.slotId), chainTime)
+      : toTreeTarget(
+          await loadTree(scope, { kind: query.kind, treeId: query.treeId, now: now() }),
+          chainTime,
+        );
+  };
+
+/** §2's target: read only, and a tree must be in the campaign the link names. */
+const linkTarget = async (scope: Scope, body: UploadUrlBody, now: Date) => {
+  if (body.kind === 'PLANTED') {
+    return loadPlanting(scope, body.campaign, body.slotId);
+  }
+
+  const target = await loadTree(scope, {
+    kind: body.kind,
+    treeId: body.treeId,
+    milestone: body.milestone,
+    now,
+  });
+
+  if (target.tree.address !== body.campaign) {
+    throw new DomainError('not_found');
+  }
+
+  return target;
+};
+
+/** §2: the link prechecks, then the queued row and a presigned PUT; any reason is a 422 with nothing written. */
+const uploadUrlOf = ({ repository, storage, chainNow, now }: Services) => {
+  const link = async (submissionId: string, caller: Caller, body: UploadUrlBody) =>
+    storage.presignPut({
+      bucket: EVIDENCE_BUCKET,
+      key: `${caller.id}/${submissionId}.mp4`,
+      contentType: body.contentType,
+      contentLength: body.sizeBytes,
+      sha256Base64: base64Of(body.sha256),
+    });
+  const replay = async (holder: HolderRow, caller: Caller, body: UploadUrlBody) => ({
+    status: 200,
+    body: {
+      submissionId: holder.id,
+      status: 'queued',
+      upload: await link(holder.id, caller, body),
+      idempotent: true,
+    },
+  });
+  // the video hash key decides a race: the loser re-reads the holder (§2 concurrency)
+  const insertOrReplay = async (caller: Caller, body: UploadUrlBody, submissionId: string) => {
+    try {
+      await repository.insertQueued(queuedRow(caller, body, submissionId));
+
+      return null;
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== UNIQUE_VIOLATION) {
+        throw error;
+      }
+
+      const winner = await repository.holderOf(body.sha256);
+
+      if (isRetry(winner, caller, body)) {
+        return replay(winner, caller, body);
+      }
+
+      throw new DomainError('precheck_failed', { reasons: ['duplicate_video'] });
+    }
+  };
+
+  return async (caller: Caller, body: UploadUrlBody) => {
+    const scope = {
+      repository,
+      wallet: walletOf(caller),
+      chainTime: await chainNow(),
+      tagFor: (campaign: string, slotId: number) => repository.tagOf(campaign, slotId),
+    };
+    const [target, holder] = await Promise.all([
+      linkTarget(scope, body, now()),
+      repository.holderOf(body.sha256),
+    ]);
+    const reasons = reasonsOf(
+      linkChecks({
+        ...target.facts,
+        callerProfileId: caller.id,
+        durationSec: body.durationSec,
+        existingByHash: hashFact(holder, body),
+      }),
+    );
+
+    if (reasons.length > 0) {
+      throw new DomainError('precheck_failed', { reasons });
+    }
+
+    if (isRetry(holder, caller, body)) {
+      return replay(holder, caller, body);
+    }
+
+    const submissionId = randomUUID();
+
+    return (
+      (await insertOrReplay(caller, body, submissionId)) ?? {
+        status: 201,
+        body: { submissionId, status: 'queued', upload: await link(submissionId, caller, body) },
+      }
+    );
   };
 };
 
 /** docs/BE/features/evidence.md: a planter's evidence, from the capture target onwards. */
-export const createEvidenceService = ({
-  database,
-  chainNow,
-  now,
-  randomBytes,
-}: EvidenceDependencies) => {
-  const repository = evidenceRepository(database);
-  const tagFor = async (campaign: string, slotId: number, owned: boolean) =>
-    owned
-      ? ((await issueSlotTags(database, randomBytes, [{ campaign, slotId }])).get(
-          `${campaign}:${slotId}`,
-        )?.code ?? null)
-      : repository.tagOf(campaign, slotId);
+export const createEvidenceService = (dependencies: EvidenceDependencies) => {
+  const services = { ...dependencies, repository: evidenceRepository(dependencies.database) };
 
-  return {
-    /** §1: a read; a blocked target is a 200 with its reasons. */
-    captureTarget: async (caller: Caller, query: CaptureTargetQuery) => {
-      const scope = { repository, wallet: walletOf(caller), chainTime: await chainNow(), tagFor };
-
-      return query.kind === 'PLANTED'
-        ? plantingTarget(scope, query)
-        : treeTarget(scope, query, now());
-    },
-  };
+  return { captureTarget: captureTargetOf(services), uploadUrl: uploadUrlOf(services) };
 };

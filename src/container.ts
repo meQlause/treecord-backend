@@ -98,7 +98,9 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
     blockTime: asFunction(({ chain }: Cradle) => blockTime(chain)).singleton(),
     clock: asValue(() => new Date()),
     randomBytes: asValue((count: number) => new Uint8Array(randomBytes(count))),
-    storage: asFunction(({ config: settings }: Cradle) => createStorage(settings)).singleton(),
+    storage: asFunction(({ config: settings, clock }: Cradle) =>
+      createStorage(settings, clock),
+    ).singleton(),
     verifyToken: asFunction(({ config: settings }: Cradle) =>
       privyVerifier({ appId: settings.PRIVY_APP_ID, resolveKey: privyJwks(settings.PRIVY_APP_ID) }),
     ).singleton(),

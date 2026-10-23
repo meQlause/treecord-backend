@@ -56,6 +56,10 @@ const jobOf = async (owner: Role | 'other'): Promise<Probe> => ({
 });
 
 const CAMPAIGN = '0x00000000000000000000000000000000000000c1';
+// an Active campaign where the matrix planter (wallet 0x2222…) holds slot 1 with its tag
+const PLANTING_CAMPAIGN = '0x00000000000000000000000000000000000000c2';
+const PLANTER_WALLET = `0x${'2'.repeat(40)}`;
+let announced = 0;
 const ISSUED_TX = `0x${'1'.repeat(64)}`;
 
 // Every route the composition root serves under /api/v1, and who may call it.
@@ -179,6 +183,26 @@ const MATRIX: AccessMatrix = {
     probe: { method: 'get', path: `/api/v1/evidence/capture-target?kind=ALIVE&treeId=${TREE_ID}` },
     ok: 200,
   },
+  'POST /evidence/upload-url': {
+    allowed: ['planter'],
+    probe: async () => {
+      announced += 1;
+
+      return {
+        method: 'post',
+        path: '/api/v1/evidence/upload-url',
+        body: {
+          kind: 'PLANTED',
+          campaign: PLANTING_CAMPAIGN,
+          slotId: '1',
+          milestone: 0,
+          sha256: String(announced).padStart(64, '0'),
+          sizeBytes: 1000,
+        },
+      };
+    },
+    ok: 201,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
@@ -216,6 +240,11 @@ beforeAll(async () => {
   profileOf.set('other', await aProfile(test.database, 'planter', OTHER_USER));
   await aCampaign(test.database, { address: CAMPAIGN });
   await aPlantedTree(test.database);
+  await aCampaign(test.database, { address: PLANTING_CAMPAIGN, status: 'active' });
+  await sql`insert into public.slots (campaign_address, slot_id, kind, status, planter_address)
+    values (${PLANTING_CAMPAIGN}, 1, 'open', 'claimed', ${PLANTER_WALLET})`.execute(test.database);
+  await sql`insert into public.slot_tags (campaign_address, slot_id, code)
+    values (${PLANTING_CAMPAIGN}, 1, 'TC-MATR-2XAA')`.execute(test.database);
   await sql`insert into public.carbon_batches (batch_id, campaign_address, amount, registry, serial_start,
       serial_end, vintage, issued_block, issued_tx, issued_at)
     values (1, ${CAMPAIGN}, 100, 'Verra', 'V-1', 'V-100', 2026, 1, ${ISSUED_TX}, now())`.execute(
