@@ -1,6 +1,7 @@
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { sql } from 'kysely';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { EvidencePayload } from '../../../../src/generated/frozen/evidence.js';
 import { testApi, type TestApi } from '../../../helpers/api.js';
 import {
@@ -152,5 +153,77 @@ describe('POST /api/v1/evidence/:submissionId/submit, failing prechecks', () => 
 
     expect(response.status).toBe(202);
     expect(response.body.job).toMatchObject({ kind: 'score', status: 'pending', attempts: 0 });
+  });
+});
+
+/** Writes bytes straight into the evidence bucket with the internal client, past any presigned link (ADR-020). */
+const overwrite = async (submissionId: string, bytes: Buffer): Promise<void> => {
+  const [row] = (
+    await sql<{
+      video_path: string;
+    }>`select video_path from public.submissions where id = ${submissionId}`.execute(test.database)
+  ).rows;
+  const client = new S3Client({
+    endpoint: minio.config.S3_ENDPOINT,
+    region: minio.config.S3_REGION,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: minio.config.S3_ACCESS_KEY,
+      secretAccessKey: minio.config.S3_SECRET_KEY,
+    },
+  });
+
+  await client.send(
+    new PutObjectCommand({ Bucket: 'evidence', Key: row?.video_path, Body: bytes }),
+  );
+};
+
+const statusOf = async (submissionId: string) =>
+  (
+    await sql<{
+      status: string;
+    }>`select status from public.submissions where id = ${submissionId}`.execute(test.database)
+  ).rows[0]?.status;
+
+// docs/BE/features/evidence.md §3 step 4, FR-132.
+describe('POST /api/v1/evidence/:submissionId/submit, the stored object', () => {
+  // the sound check-in above holds tree 3001's month 6: start each case from a free month
+  beforeEach(async () => {
+    await sql`delete from public.relayer_jobs where kind = 'score'`.execute(test.database);
+    await sql`delete from public.submissions where tree_id = 3001 and kind = 'ALIVE'`.execute(
+      test.database,
+    );
+  });
+
+  it('stored bytes that differ from the signed hash are hash_mismatch, and the row is rejected', async () => {
+    const video = freshClip();
+    const submissionId = await phone.record(CHECK_IN_TARGET, video);
+
+    await overwrite(submissionId, Buffer.from('a different video of the same tree'));
+
+    const response = await submit(submissionId, await phone.sign(checkInPayload(video)));
+
+    expect(response.status).toBe(422);
+    expect(response.body.error.details.reasons).toEqual(['hash_mismatch']);
+    expect(await statusOf(submissionId)).toBe('rejected');
+  });
+
+  it('an announced video that never arrived is 409 video_not_uploaded, and nothing is written', async () => {
+    const video = freshClip();
+    const announced = await request(api.app)
+      .post('/api/v1/evidence/upload-url')
+      .set(await api.signedIn(SARI))
+      .send({
+        ...CHECK_IN_TARGET,
+        sha256: sha256Hex(video),
+        sizeBytes: video.length,
+        durationSec: 7,
+      });
+    const { submissionId } = announced.body;
+    const response = await submit(submissionId, await phone.sign(checkInPayload(video)));
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('video_not_uploaded');
+    expect(await statusOf(submissionId)).toBe('queued');
   });
 });
