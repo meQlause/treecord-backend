@@ -15,7 +15,7 @@ import {
   type TestDatabase,
 } from '../helpers/database.js';
 import { fakePrivy } from '../helpers/fake-privy.js';
-import { aCampaign, aJob, aProfile } from '../fixtures/mirror.js';
+import { aCampaign, aJob, aPlantedTree, aProfile, TREE_ID } from '../fixtures/mirror.js';
 
 const userOf = (role: Role): string => `did:privy:cm2matrix${role}000000000`;
 const OTHER_USER = 'did:privy:cm2matrixother0000000000';
@@ -52,6 +52,12 @@ const MATRIX: AccessMatrix = {
     probe: { method: 'get', path: '/api/v1/species' },
     ok: 200,
   },
+  'GET /trees/:treeId': {
+    public: true,
+    allowed: ROLES,
+    probe: { method: 'get', path: `/api/v1/trees/${TREE_ID}` },
+    ok: 200,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
@@ -80,6 +86,7 @@ beforeAll(async () => {
 
   profileOf.set('other', await aProfile(test.database, 'planter', OTHER_USER));
   await aCampaign(test.database, { address: CAMPAIGN });
+  await aPlantedTree(test.database);
 }, CONTAINER_START_MS);
 
 afterAll(async () => {

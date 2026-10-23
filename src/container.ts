@@ -12,6 +12,8 @@ import { campaignsRouter } from './features/campaigns/index.js';
 import { accountsRouter } from './features/accounts/index.js';
 import { registerJobs, type JobsCradle } from './features/jobs/jobs.container.js';
 import { jobsRouter } from './features/jobs/index.js';
+import { registerTrees, type TreesCradle } from './features/trees/trees.container.js';
+import { treesRouter } from './features/trees/index.js';
 import {
   privyEmbeddedWallet,
   privyJwks,
@@ -23,6 +25,7 @@ import { chainClock } from './shared/chain/clock.js';
 import { createDatabase, type DatabaseClient } from './shared/db/database.js';
 import { authenticateIfPresent, type AuthOptions } from './shared/http/auth.js';
 import { createLogger } from './shared/http/logger.js';
+import { createStorage, type Storage } from './shared/storage/storage.js';
 
 /** Shared singletons (be-architecture §6). */
 type SharedCradle = {
@@ -34,12 +37,13 @@ type SharedCradle = {
   chainNow: () => Promise<Date>;
   /** The server clock; injected so tests fix it (SR-1). */
   clock: () => Date;
+  storage: Storage;
   verifyToken: TokenVerifier;
   walletOf: (privyUserId: string) => Promise<string | null>;
 };
 
 /** Every registration; a misspelt dependency name is a compile error (SR-1). */
-export type Cradle = SharedCradle & AccountsCradle & JobsCradle & CampaignsCradle;
+export type Cradle = SharedCradle & AccountsCradle & JobsCradle & CampaignsCradle & TreesCradle;
 
 /** The composition root: shared singletons, then each feature's register(). */
 export const createRootContainer = (config: Config): AwilixContainer<Cradle> => {
@@ -65,6 +69,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
     ).singleton(),
     chainNow: asFunction(({ chain }: Cradle) => chainClock(chain)).singleton(),
     clock: asValue(() => new Date()),
+    storage: asFunction(({ config: settings }: Cradle) => createStorage(settings)).singleton(),
     verifyToken: asFunction(({ config: settings }: Cradle) =>
       privyVerifier({ appId: settings.PRIVY_APP_ID, resolveKey: privyJwks(settings.PRIVY_APP_ID) }),
     ).singleton(),
@@ -79,6 +84,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
   registerAccounts(container);
   registerJobs(container);
   registerCampaigns(container);
+  registerTrees(container);
 
   return container;
 };
@@ -91,9 +97,14 @@ export const authOptions = ({ config, verifyToken, accountsService }: Cradle): A
 });
 
 /** Every router mounted before authentication; the access matrix covers each too. */
-export const publicRouters = (cradle: Cradle): Router[] => [
-  campaignsRouter(cradle.campaignsService, authenticateIfPresent(authOptions(cradle))),
-];
+export const publicRouters = (cradle: Cradle): Router[] => {
+  const signedInIfToken = authenticateIfPresent(authOptions(cradle));
+
+  return [
+    campaignsRouter(cradle.campaignsService, signedInIfToken),
+    treesRouter(cradle.treesService, signedInIfToken),
+  ];
+};
 
 /** Every router mounted behind authentication; the access matrix (tests/integration/container.test.ts) covers each. */
 export const privateRouters = ({ accountsService, jobsService }: Cradle): Router[] => [
