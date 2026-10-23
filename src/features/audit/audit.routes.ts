@@ -7,8 +7,10 @@ import {
   challengeSchema,
   closeSchema,
   findingSchema,
+  listSessionsSchema,
   openSessionSchema,
   type FindingInput,
+  type ListSessionsQuery,
   type OpenSessionInput,
 } from './audit.schema.js';
 import type { createAuditService } from './audit.service.js';
@@ -17,13 +19,22 @@ type AuditService = ReturnType<typeof createAuditService>;
 type Auditor = Parameters<AuditService['open']>[0];
 
 const CREATED = 201;
+const SESSIONS_PATH = '/audit/sessions';
 
 /** Private routes, mounted under /api/v1 behind authentication (audit §1–§8): auditors only, the role gate first,
  *  even an operator answers 403. */
 export const auditRouter = (audit: AuditService): Router =>
   Router()
-    .use('/audit/sessions', allowRoles('auditor'))
-    .post('/audit/sessions', validate(openSessionSchema), async (_req, res) => {
+    .use(SESSIONS_PATH, allowRoles('auditor'))
+    .get(SESSIONS_PATH, validate(listSessionsSchema, 'query'), async (_req, res) => {
+      res.json(
+        await audit.list(
+          res.locals['profile'] as Auditor,
+          res.locals['query'] as ListSessionsQuery,
+        ),
+      );
+    })
+    .post(SESSIONS_PATH, validate(openSessionSchema), async (_req, res) => {
       res
         .status(CREATED)
         .json(

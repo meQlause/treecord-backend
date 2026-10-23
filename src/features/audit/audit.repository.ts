@@ -3,6 +3,11 @@ import type { DB } from '../../generated/db.js';
 
 // the aliased tables and columns several reads share
 const SESSIONS = 'audit_sessions as s';
+const SESSION_CREATED = 's.created_at';
+const SESSION_REPORT_HASH = 's.report_hash';
+const SESSION_SIZE = 's.sample_size';
+const SESSION_BLOCK = 's.seed_block_number';
+const CAMPAIGN_JOIN = 'campaigns as c';
 const SESSION_CAMPAIGN = 's.campaign_address';
 const SESSION_AUDITOR = 's.auditor_profile_id';
 const SAMPLES = 'audit_samples as a';
@@ -74,23 +79,23 @@ const sessionReads = (database: Kysely<DB>) => ({
   session: (id: string, auditorId: string) =>
     database
       .selectFrom(SESSIONS)
-      .innerJoin('campaigns as c', 'c.address', SESSION_CAMPAIGN)
+      .innerJoin(CAMPAIGN_JOIN, 'c.address', SESSION_CAMPAIGN)
       .select([
         's.id',
         's.status',
         SESSION_CAMPAIGN,
         'c.title',
         'c.region_name',
-        's.seed_block_number',
+        SESSION_BLOCK,
         's.seed_block_hash',
         's.seed',
         sql<string[]>`s.population_tree_ids::text[]`.as('population'),
-        's.sample_size',
-        's.report_hash',
+        SESSION_SIZE,
+        SESSION_REPORT_HASH,
         's.report',
         's.report_notes',
         SESSION_AUDITOR,
-        's.created_at',
+        SESSION_CREATED,
         's.closed_at',
       ])
       .where('s.id', '=', id)
@@ -267,19 +272,19 @@ const reproductionReads = (database: Kysely<DB>) => ({
   publicSession: (id: string) =>
     database
       .selectFrom(SESSIONS)
-      .innerJoin('campaigns as c', 'c.address', SESSION_CAMPAIGN)
+      .innerJoin(CAMPAIGN_JOIN, 'c.address', SESSION_CAMPAIGN)
       .select([
         's.id',
         's.status',
         SESSION_CAMPAIGN,
         'c.title',
-        's.seed_block_number',
+        SESSION_BLOCK,
         's.seed_block_hash',
         's.seed',
         sql<string[]>`s.population_tree_ids::text[]`.as('population'),
-        's.sample_size',
+        SESSION_SIZE,
         's.report',
-        's.report_hash',
+        SESSION_REPORT_HASH,
         sql<string[]>`array(select a.tree_id::text from public.audit_samples a
           where a.session_id = s.id order by a.position)`.as('sample'),
       ])
@@ -298,7 +303,7 @@ const accessWrites = (database: Kysely<DB>) => ({
         .select('s.id')
         .where(SESSION_AUDITOR, '=', auditorId)
         .where('a.tree_id', '=', treeId)
-        .orderBy('s.created_at')
+        .orderBy(SESSION_CREATED)
         .limit(1)
         .executeTakeFirst()
     )?.id,
@@ -415,7 +420,72 @@ const recordReads = (database: Kysely<DB>) => ({
     ).map((row) => row.milestone),
 });
 
+const PREVIEW_SIZE = 21;
+
+/** §1: the auditor's sessions as S23 lists them, newest first. */
+const listReads = (database: Kysely<DB>) => ({
+  sessionPage: (
+    auditorId: string,
+    status: 'open' | 'closed' | undefined,
+    after: { createdAt: string; id: string } | null,
+    take: number,
+  ) =>
+    database
+      .selectFrom(SESSIONS)
+      .innerJoin(CAMPAIGN_JOIN, 'c.address', SESSION_CAMPAIGN)
+      .select([
+        's.id',
+        's.status',
+        SESSION_CAMPAIGN,
+        'c.title',
+        SESSION_BLOCK,
+        sql<number>`cardinality(s.population_tree_ids)::int`.as('population_size'),
+        SESSION_SIZE,
+        sql<
+          string[]
+        >`array(select u::text from unnest(s.population_tree_ids) u order by u limit ${sql.lit(PREVIEW_SIZE)})`.as(
+          'population_preview',
+        ),
+        sql<string[]>`array(select a.tree_id::text from public.audit_samples a
+          where a.session_id = s.id order by a.position)`.as('sample'),
+        sql<number>`(select count(*)::int from public.audit_samples a
+          where a.session_id = s.id and a.finding is not null)`.as('findings_recorded'),
+        sql<number>`(select count(*)::int from public.challenges ch
+          where ch.audit_session_id = s.id)`.as('challenges_issued'),
+        SESSION_REPORT_HASH,
+        SESSION_CREATED,
+        sql<string>`s.created_at::text`.as('created_cursor'),
+        's.closed_at',
+      ])
+      .where(SESSION_AUDITOR, '=', auditorId)
+      .$if(status !== undefined, (query) =>
+        query.where('s.status', '=', status as 'open' | 'closed'),
+      )
+      .$if(after !== null, (query) =>
+        query.where(
+          sql<boolean>`(s.created_at, s.id) < (${after?.createdAt}::timestamptz, ${after?.id}::uuid)`,
+        ),
+      )
+      .orderBy(SESSION_CREATED, 'desc')
+      .orderBy('s.id', 'desc')
+      .limit(take)
+      .execute(),
+
+  sessionCount: async (auditorId: string, status: 'open' | 'closed' | undefined): Promise<number> =>
+    (
+      await database
+        .selectFrom(SESSIONS)
+        .select(sql<number>`count(*)::int`.as('total'))
+        .where(SESSION_AUDITOR, '=', auditorId)
+        .$if(status !== undefined, (query) =>
+          query.where('s.status', '=', status as 'open' | 'closed'),
+        )
+        .executeTakeFirstOrThrow()
+    ).total,
+});
+
 export const auditRepository = (database: Kysely<DB>) => ({
+  ...listReads(database),
   ...openWrites(database),
   ...bundleReads(database),
   ...recordReads(database),
@@ -431,6 +501,8 @@ export type AuditRepository = ReturnType<typeof auditRepository>;
 type Rows<Read extends keyof AuditRepository> = Awaited<ReturnType<AuditRepository[Read]>>;
 
 export type SessionRow = NonNullable<Rows<'session'>>;
+
+export type SessionCardRow = Rows<'sessionPage'>[number];
 
 export type SampleRow = Rows<'samples'>[number];
 

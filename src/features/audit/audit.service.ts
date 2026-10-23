@@ -11,10 +11,17 @@ import type { DatabaseClient } from '../../shared/db/database.js';
 import type { Storage } from '../../shared/storage/storage.js';
 import { toTreeBundle } from './audit.bundle.js';
 import { DomainError } from '../../shared/errors.js';
-import { toChallenge, toReproduction, toSession } from './audit.mapper.js';
+import { toChallenge, toReproduction, toSession, toSessionCard } from './audit.mapper.js';
 import { auditRepository, type SampleRow, type SessionRow } from './audit.repository.js';
-import { buildReport, challengeRefusal, missingFindings, type Finding } from './audit.rules.js';
-import type { FindingInput, OpenSessionInput } from './audit.schema.js';
+import {
+  buildReport,
+  challengeRefusal,
+  decodeSessionCursor,
+  encodeSessionCursor,
+  missingFindings,
+  type Finding,
+} from './audit.rules.js';
+import type { FindingInput, ListSessionsQuery, OpenSessionInput } from './audit.schema.js';
 
 type Auditor = { id: string };
 
@@ -101,6 +108,29 @@ const openOf =
     });
 
     return id;
+  };
+
+/** §1, FR-181: the signed-in auditor's own sessions, newest first, a page at a time. */
+const listOf =
+  ({ database }: AuditDependencies) =>
+  async (auditor: Auditor, { status, cursor, limit }: ListSessionsQuery) => {
+    const repository = auditRepository(database);
+    const after = cursor === undefined ? null : decodeSessionCursor(cursor);
+    const [rows, total] = await Promise.all([
+      repository.sessionPage(auditor.id, status, after, limit + 1),
+      repository.sessionCount(auditor.id, status),
+    ]);
+    const items = rows.slice(0, limit);
+    const last = items.at(-1);
+
+    return {
+      items: items.map(toSessionCard),
+      nextCursor:
+        rows.length > limit && last !== undefined
+          ? encodeSessionCursor({ createdAt: last.created_cursor, id: last.id })
+          : null,
+      total,
+    };
   };
 
 /** §5, FR-197: replaces one sampled tree's finding, under a share lock so the close cannot slip in between. */
@@ -289,6 +319,7 @@ export const createAuditService = (dependencies: AuditDependencies) => {
   const close = closeOf(dependencies);
   const challenge = challengeOf(dependencies);
   const tree = treeOf(dependencies);
+  const list = listOf(dependencies);
 
   /** The caller's own session; anyone else's answers as unknown (ADR-008, REG-005). */
   const ownSession = async (auditor: Auditor, id: string): Promise<SessionRow> => {
@@ -315,6 +346,7 @@ export const createAuditService = (dependencies: AuditDependencies) => {
   return {
     open: async (auditor: Auditor, input: OpenSessionInput) =>
       sessionOf(auditor, await open(auditor, input)),
+    list,
     session: sessionOf,
     record,
     challenge,

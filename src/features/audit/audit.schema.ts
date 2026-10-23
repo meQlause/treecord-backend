@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pageQuery } from '../../shared/http/cursor.js';
 import { addressParam, treeIdParam } from '../../shared/http/params.js';
 
 const MAX_SAMPLE = 100;
@@ -34,3 +35,11 @@ export const closeSchema = z.strictObject({
 
 /** §6 (FR-198): the sampled tree; the code and both instants are server-owned. */
 export const challengeSchema = z.strictObject({ treeId: treeIdParam });
+
+/** §1 (FR-181): the "All / Open / Closed" filter and the page. */
+export const listSessionsSchema = z.strictObject({
+  status: z.enum(['open', 'closed']).optional(),
+  ...pageQuery,
+});
+
+export type ListSessionsQuery = z.infer<typeof listSessionsSchema>;

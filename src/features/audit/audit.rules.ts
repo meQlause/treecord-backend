@@ -1,5 +1,7 @@
 import { AUDIT_SAMPLE_ALGORITHM, reportHash } from '../../generated/frozen/audit.js';
 import { MILESTONE_DUE_UNITS } from '../../generated/frozen/constants.js';
+import { z } from 'zod';
+import { decodeCursor, encodeCursor } from '../../shared/http/cursor.js';
 
 // docs/BE/features/audit.md §7, §10, FR-190–FR-192: the closed report, built from what the session froze. Pure: every
 // instant arrives as an ISO string, the salt as hex.
@@ -147,4 +149,22 @@ export const progressOf = (paid: number[], forfeited: number[]) => {
   );
 
   return { milestonesPaid: paid.length, month: open === undefined ? LAST_MONTH : open.month };
+};
+
+export type SessionPosition = { createdAt: string; id: string };
+
+// the instant is kept as the database wrote it (microseconds), so the next page starts exactly after this row
+const cursorSchema = z.strictObject({
+  t: z.string().regex(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?[+-]\d{2}(:\d{2})?$/),
+  i: z.uuid(),
+});
+
+/** audit §1 keyset cursor: the last session's (created_at, id), the order the list is in. */
+export const encodeSessionCursor = ({ createdAt, id }: SessionPosition): string =>
+  encodeCursor({ t: createdAt, i: id });
+
+export const decodeSessionCursor = (cursor: string): SessionPosition => {
+  const { t, i } = decodeCursor(cursor, cursorSchema);
+
+  return { createdAt: t, id: i };
 };

@@ -1,4 +1,4 @@
-import type { ChallengeRow, SampleRow, SessionRow } from './audit.repository.js';
+import type { ChallengeRow, SampleRow, SessionCardRow, SessionRow } from './audit.repository.js';
 
 /** §3, FR-199: answered once a check-in carried it on chain, else open until it expires. */
 const statusOf = (row: ChallengeRow, now: Date): string => {
@@ -107,4 +107,21 @@ export const toReproduction = (
   check,
   reportHash: session.report_hash,
   report: session.report,
+});
+
+/** docs/BE/features/audit.md §1: one session as S23 lists it. */
+export const toSessionCard = (row: SessionCardRow) => ({
+  id: row.id,
+  status: row.status,
+  campaign: { address: row.campaign_address, title: row.title },
+  seedBlockNumber: row.seed_block_number,
+  populationSize: row.population_size,
+  sampleSize: row.sample_size,
+  populationPreview: row.population_preview,
+  sample: row.sample,
+  findingsRecorded: row.findings_recorded,
+  challengesIssued: row.challenges_issued,
+  reportHash: row.report_hash,
+  createdAt: row.created_at.toISOString(),
+  closedAt: row.closed_at?.toISOString() ?? null,
 });

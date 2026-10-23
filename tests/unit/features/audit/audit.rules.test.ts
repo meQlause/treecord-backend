@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildReport,
   challengeRefusal,
+  decodeSessionCursor,
+  encodeSessionCursor,
   missingFindings,
   progressOf,
   totalsOf,
@@ -129,5 +131,31 @@ describe('progressOf', () => {
     ['all six settled: the last month', [0, 1, 2, 3, 4], [5], { milestonesPaid: 5, month: 36 }],
   ])('%s', (_case, paid, forfeited, progress) => {
     expect(progressOf(paid, forfeited)).toEqual(progress);
+  });
+});
+
+// §1: the keyset cursor over (created_at, id), written exactly as the database gave the instant.
+describe('session cursor', () => {
+  const POSITION = {
+    createdAt: '2026-10-21 03:30:00.123456+00',
+    id: '868c029f-2a97-4721-b005-f66b88e3768b',
+  };
+
+  it('round-trips a position, microseconds included', () => {
+    expect(decodeSessionCursor(encodeSessionCursor(POSITION))).toEqual(POSITION);
+  });
+
+  it.each([
+    ['text that is not base64 JSON', 'not a cursor'],
+    ['JSON of another shape', Buffer.from(JSON.stringify({ x: 1 })).toString('base64url')],
+    [
+      'an instant that is not a timestamp',
+      encodeSessionCursor({ ...POSITION, createdAt: 'yesterday' }),
+    ],
+    ['an id that is not a uuid', encodeSessionCursor({ ...POSITION, id: '17' })],
+  ])('refuses %s as invalid_cursor', (_case, cursor) => {
+    expect(() => decodeSessionCursor(cursor)).toThrow(
+      expect.objectContaining({ code: 'invalid_cursor' }),
+    );
   });
 });

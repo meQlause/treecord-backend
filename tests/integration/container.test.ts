@@ -302,6 +302,11 @@ const MATRIX: AccessMatrix = {
     }),
     ok: 200,
   },
+  'GET /audit/sessions': {
+    allowed: ['auditor'],
+    probe: { method: 'get', path: '/api/v1/audit/sessions' },
+    ok: 200,
+  },
   'POST /audit/sessions': {
     allowed: ['auditor'],
     probe: {
