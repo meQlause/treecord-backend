@@ -1,7 +1,6 @@
 import { createApp } from './app.js';
 import { readConfig } from './config.js';
-import { createRootContainer } from './container.js';
-import { accountsRouter } from './features/accounts/index.js';
+import { createRootContainer, privateRouters } from './container.js';
 import { pingDatabase } from './shared/db/database.js';
 import { shutdownGracefully } from './shutdown.js';
 
@@ -19,7 +18,7 @@ const server = createApp({
     demoWalletAuth: config.DEMO_WALLET_AUTH,
     resolveProfile: accountsService.resolveProfile,
   },
-  privateRouters: [accountsRouter(accountsService)],
+  privateRouters: privateRouters(container.cradle),
 }).listen(config.PORT);
 
 const stop = (signal: NodeJS.Signals): void => {

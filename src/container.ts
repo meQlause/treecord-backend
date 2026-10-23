@@ -1,8 +1,10 @@
 import { asFunction, asValue, createContainer, InjectionMode, type AwilixContainer } from 'awilix';
+import type { Router } from 'express';
 import type { Logger } from 'pino';
 import type { PublicClient } from 'viem';
 import type { Config } from './config.js';
 import { registerAccounts, type AccountsCradle } from './features/accounts/accounts.container.js';
+import { accountsRouter } from './features/accounts/index.js';
 import {
   privyEmbeddedWallet,
   privyJwks,
@@ -63,3 +65,8 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
 
   return container;
 };
+
+/** Every router mounted behind authentication; the access matrix (tests/integration/container.test.ts) covers each. */
+export const privateRouters = ({ accountsService }: Cradle): Router[] => [
+  accountsRouter(accountsService),
+];
