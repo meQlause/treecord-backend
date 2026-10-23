@@ -1,9 +1,15 @@
 import { randomInt } from 'node:crypto';
 import { bytesToHex, type Hex } from 'viem';
-import { auditSeed, sampleTreeIds } from '../../generated/frozen/audit.js';
+import {
+  AUDIT_SAMPLE_ALGORITHM,
+  auditSeed,
+  reportHash,
+  sampleTreeIds,
+  type JsonValue,
+} from '../../generated/frozen/audit.js';
 import type { DatabaseClient } from '../../shared/db/database.js';
 import { DomainError } from '../../shared/errors.js';
-import { toChallenge, toSession } from './audit.mapper.js';
+import { toChallenge, toReproduction, toSession } from './audit.mapper.js';
 import { auditRepository, type SampleRow, type SessionRow } from './audit.repository.js';
 import { buildReport, challengeRefusal, missingFindings, type Finding } from './audit.rules.js';
 import type { FindingInput, OpenSessionInput } from './audit.schema.js';
@@ -281,6 +287,37 @@ export const createAuditService = (dependencies: AuditDependencies) => {
       const body = storedReport(await ownSession(auditor, id));
 
       return built ? body : { ...body, idempotent: true };
+    },
+
+    /** §9, FR-203–FR-205: public; the server's own checks with the same shared functions the browser copies. A
+     *  mismatch is reported, never regenerated (FR-204). */
+    reproduce: async (id: string) => {
+      const session = await repository.publicSession(id);
+
+      if (session === undefined) {
+        throw new DomainError('not_found');
+      }
+
+      const seed = auditSeed(session.id, session.seed_block_hash as Hex);
+      const recomputedSample = sampleTreeIds(
+        session.population.map(BigInt),
+        seed,
+        session.sample_size,
+      ).map(String);
+
+      return toReproduction(
+        session,
+        {
+          seedMatches: seed === session.seed,
+          recomputedSample,
+          sampleMatches: recomputedSample.join() === session.sample.join(),
+          reportMatches:
+            session.report_hash === null
+              ? null
+              : reportHash(session.report as JsonValue) === session.report_hash,
+        },
+        AUDIT_SAMPLE_ALGORITHM,
+      );
     },
 
     /** §8: the stored report with the private notes, for the owner only. */

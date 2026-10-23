@@ -6,7 +6,7 @@ import type { PublicClient } from 'viem';
 import type { Config } from './config.js';
 import { registerAccounts, type AccountsCradle } from './features/accounts/accounts.container.js';
 import { registerAudit, type AuditCradle } from './features/audit/audit.container.js';
-import { auditRouter } from './features/audit/index.js';
+import { auditPublicRouter, auditRouter } from './features/audit/index.js';
 import {
   registerCampaigns,
   type CampaignsCradle,
@@ -172,6 +172,7 @@ export const publicRouters = (cradle: Cradle): Router[] => {
     treesRouter(cradle.treesService, signedInIfToken),
     reportsRouter(cradle.reportsService),
     carbonPublicRouter(cradle.carbonService),
+    auditPublicRouter(cradle.auditService),
   ];
 };
 

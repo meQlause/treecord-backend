@@ -1,6 +1,9 @@
 import { sql, type Kysely } from 'kysely';
 import type { DB } from '../../generated/db.js';
 
+// a session's campaign, joined and selected by both session reads
+const SESSION_CAMPAIGN = 's.campaign_address';
+
 type NewSession = {
   id: string;
   auditorId: string;
@@ -67,11 +70,11 @@ const sessionReads = (database: Kysely<DB>) => ({
   session: (id: string, auditorId: string) =>
     database
       .selectFrom('audit_sessions as s')
-      .innerJoin('campaigns as c', 'c.address', 's.campaign_address')
+      .innerJoin('campaigns as c', 'c.address', SESSION_CAMPAIGN)
       .select([
         's.id',
         's.status',
-        's.campaign_address',
+        SESSION_CAMPAIGN,
         'c.title',
         'c.region_name',
         's.seed_block_number',
@@ -255,8 +258,34 @@ const challengeWrites = (database: Kysely<DB>) => ({
     ).rows[0],
 });
 
+/** §9: any session, by id alone, for the public reproduction; the caller picks the public fields. */
+const reproductionReads = (database: Kysely<DB>) => ({
+  publicSession: (id: string) =>
+    database
+      .selectFrom('audit_sessions as s')
+      .innerJoin('campaigns as c', 'c.address', SESSION_CAMPAIGN)
+      .select([
+        's.id',
+        's.status',
+        SESSION_CAMPAIGN,
+        'c.title',
+        's.seed_block_number',
+        's.seed_block_hash',
+        's.seed',
+        sql<string[]>`s.population_tree_ids::text[]`.as('population'),
+        's.sample_size',
+        's.report',
+        's.report_hash',
+        sql<string[]>`array(select a.tree_id::text from public.audit_samples a
+          where a.session_id = s.id order by a.position)`.as('sample'),
+      ])
+      .where('s.id', '=', id)
+      .executeTakeFirst(),
+});
+
 export const auditRepository = (database: Kysely<DB>) => ({
   ...openWrites(database),
+  ...reproductionReads(database),
   ...challengeWrites(database),
   ...recordWrites(database),
   ...sessionReads(database),

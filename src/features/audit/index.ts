@@ -1,1 +1,1 @@
-export { auditRouter } from './audit.routes.js';
+export { auditPublicRouter, auditRouter } from './audit.routes.js';

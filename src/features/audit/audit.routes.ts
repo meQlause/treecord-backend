@@ -72,3 +72,9 @@ export const auditRouter = (audit: AuditService): Router =>
           ),
         );
     });
+
+/** Public route, mounted under /api/v1 before authentication (audit §9): a token is ignored. */
+export const auditPublicRouter = (audit: AuditService): Router =>
+  Router().get('/audit/sessions/:id/reproduce', async (req, res) => {
+    res.json(await audit.reproduce(pathParam(z.uuid(), req.params.id)));
+  });

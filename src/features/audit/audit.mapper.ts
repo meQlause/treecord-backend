@@ -67,3 +67,44 @@ export const toSession = (
     closedAt: session.closed_at?.toISOString() ?? null,
   };
 };
+
+type PublicSession = {
+  id: string;
+  status: string;
+  campaign_address: string;
+  title: string | null;
+  seed_block_number: string;
+  seed_block_hash: string;
+  seed: string;
+  population: string[];
+  sample_size: number;
+  sample: string[];
+  report: unknown;
+  report_hash: string | null;
+};
+
+/** §9, FR-203, REG-003: an explicit allow-list, never the session row spread; no notes, summary or auditor list. */
+export const toReproduction = (
+  session: PublicSession,
+  check: {
+    seedMatches: boolean;
+    recomputedSample: string[];
+    sampleMatches: boolean;
+    reportMatches: boolean | null;
+  },
+  algorithm: string,
+) => ({
+  sessionId: session.id,
+  status: session.status,
+  campaign: { address: session.campaign_address, title: session.title },
+  blockNumber: session.seed_block_number,
+  blockHash: session.seed_block_hash,
+  seed: session.seed,
+  algorithm,
+  population: session.population,
+  sampleSize: session.sample_size,
+  sample: session.sample,
+  check,
+  reportHash: session.report_hash,
+  report: session.report,
+});

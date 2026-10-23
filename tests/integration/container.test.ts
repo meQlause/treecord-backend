@@ -332,6 +332,15 @@ const MATRIX: AccessMatrix = {
     ok: 201,
     foreign: () => probes.auditWrite('challenges', { treeId: String(TREE_ID) })('other'),
   },
+  'GET /audit/sessions/:id/reproduce': {
+    public: true,
+    allowed: ROLES,
+    probe: async () => ({
+      method: 'get',
+      path: `${(await probes.sessionOf('other')).path}/reproduce`,
+    }),
+    ok: 200,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
