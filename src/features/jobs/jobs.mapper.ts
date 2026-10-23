@@ -13,6 +13,13 @@ const toJobSummary = (row: StoredJob) => ({
   updatedAt: row.updated_at.toISOString(),
 });
 
+/** A job another feature shows an operator (flags §2, operations §1): the summary plus the raw worker error, which
+ *  only operators ever see (NFR-055). */
+export const toOperatorJob = (row: StoredJob) => ({
+  ...toJobSummary(row),
+  lastError: row.last_error,
+});
+
 /** docs/BE/features/jobs.md §2 response. `lastError` is a raw worker message: the key exists for operators only
  *  (NFR-055). */
 export const toJobDto = (row: JobRow, { withLastError }: { withLastError: boolean }) => ({

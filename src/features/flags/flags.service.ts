@@ -1,7 +1,8 @@
 import { keccak256, stringToHex } from 'viem';
 import type { DatabaseClient } from '../../shared/db/database.js';
 import { DomainError } from '../../shared/errors.js';
-import { enqueue, enqueuedResponse } from '../jobs/index.js';
+import { enqueue, enqueuedResponse, jobByKey, toOperatorJob } from '../jobs/index.js';
+import { toOperatorFlag } from './flags.mapper.js';
 import { flagEligibility } from './flags.rules.js';
 import { flagsRepository } from './flags.repository.js';
 import type { RaiseFlagInput, ResolveFlagInput } from './flags.schema.js';
@@ -11,12 +12,37 @@ type Caller = { id: string; wallet_address: string | null };
 /** keccak256 of the UTF-8 text: what the contract stores (flags §1, §3). */
 const textHash = (text: string): string => keccak256(stringToHex(text));
 
+/** §2: the flag S29 decides on. A flag of another tree is not this tree's flag: 404 (FR-170 acceptance 2). */
+const operatorReadOf = (database: DatabaseClient) => {
+  const repository = flagsRepository(database);
+
+  return async (treeId: string, flagId: string) => {
+    const flag = await repository.operatorFlag(treeId, flagId);
+
+    if (flag === undefined) {
+      throw new DomainError('not_found');
+    }
+
+    const [event, job] = await Promise.all([
+      flag.opened_tx === null ? undefined : repository.flaggedEvent(treeId, flag.opened_tx),
+      jobByKey(database, `resolve_flag:${flag.id}`),
+    ]);
+
+    return {
+      ...toOperatorFlag(flag, event?.data),
+      resolutionJob: job === undefined ? null : toOperatorJob(job),
+    };
+  };
+};
+
 /** docs/BE/features/flags.md §1, §3: a contributor saves a reason, an operator queues the decision. The API never
  *  changes a flag's status; only indexed events do (ADR-015). */
 export const createFlagsService = ({ database }: { database: DatabaseClient }) => {
   const repository = flagsRepository(database);
 
   return {
+    operatorRead: operatorReadOf(database),
+
     /** §1: one pending row per (tree, caller, text); a repeat reads it back. Checked in the §1 order. */
     raise: async (caller: Caller, { treeId, reasonText }: RaiseFlagInput) => {
       const wallet = caller.wallet_address;

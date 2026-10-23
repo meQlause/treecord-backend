@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { pathParam } from '../../shared/http/params.js';
+import { pathParam, treeIdParam } from '../../shared/http/params.js';
 import { allowRoles } from '../../shared/http/roles.js';
 import { validate } from '../../shared/http/validate.js';
 import type { FlagRow } from './flags.repository.js';
@@ -9,6 +9,8 @@ import type { createFlagsService } from './flags.service.js';
 
 type FlagsService = ReturnType<typeof createFlagsService>;
 type Caller = Parameters<FlagsService['raise']>[0];
+
+const operatorsOnly = allowRoles('operator');
 
 const REPLAYED = 200;
 const CREATED = 201;
@@ -36,7 +38,15 @@ export const flagsRouter = (flags: FlagsService): Router =>
         .status(idempotent ? REPLAYED : CREATED)
         .json({ flag: toFlag(flag), ...(idempotent ? { idempotent } : {}) });
     })
-    .post('/operator/flags/:id/resolve', allowRoles('operator'), async (req, res) => {
+    .get('/operator/trees/:treeId/flags/:flagId', operatorsOnly, async (req, res) => {
+      res.json(
+        await flags.operatorRead(
+          pathParam(treeIdParam, req.params.treeId),
+          pathParam(z.uuid(), req.params.flagId),
+        ),
+      );
+    })
+    .post('/operator/flags/:id/resolve', operatorsOnly, async (req, res) => {
       const id = pathParam(z.uuid(), req.params.id);
       const { status, body } = await flags.resolve(
         res.locals['profile'] as Caller,

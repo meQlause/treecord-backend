@@ -25,6 +25,9 @@ const NOTE_HASH = '0x37b4ff6197de0d488f0d4bb77772de390a6d69b3c5051dc8989f89bd4b5
 const PENDING_FLAG_ID = '2a7d3b0f-5c8e-4f26-8b4d-9e3f6a1c8b72';
 const UPHELD_FLAG_ID = '3b8e4c1a-6d9f-4a37-9c5e-0f4a7b2d9c83';
 const UNKNOWN_ID = '7d5c9b8e-1f4a-4c2e-9a3b-6f0e2d1c4b5a';
+// flags §2: the wallet that sent `TreeFlagged`, which can differ from the one that saved the text (identical reasons)
+const EVENT_FLAGGER = '0x9a4c3e2b1d0f8e7a6c5b4d3e2f1a0b9c8d7e6f5a';
+const OPENED_TX = '0x1ce442d81b6082fbb178e08bddf5191b38417d30caae1a738e505a3a3303314c';
 
 let test: TestDatabase;
 let api: TestApi;
@@ -55,6 +58,11 @@ const flagRow = async (id: string) =>
       where f.id = ${id}`.execute(test.database)
   ).rows[0];
 
+const readFlag = async (treeId: string, flagId: string, userId = RAKA) =>
+  request(api.app)
+    .get(`/api/v1/operator/trees/${treeId}/flags/${flagId}`)
+    .set(await api.signedIn(userId));
+
 const jobsKeyed = async (flagId: string) => {
   const key = `resolve_flag:${flagId}`;
 
@@ -74,6 +82,11 @@ beforeAll(async () => {
   await sql`insert into public.flags (id, tree_id, campaign_address, flagger_address, reason_text, reason_hash, status)
     values (${PENDING_FLAG_ID}, 3104, ${ROOTS}, ${ALEX_WALLET}, 'Not on-chain yet', ${REASON_HASH}, 'pending'),
            (${UPHELD_FLAG_ID}, 3001, ${ROOTS}, ${ALEX_WALLET}, 'Already decided', ${REASON_HASH}, 'upheld')`.execute(
+    test.database,
+  );
+  await sql`insert into public.tree_events (tree_id, kind, block_number, block_time, log_index, tx_hash, data)
+    values (3091, 'flagged', 24118402, '2026-10-20T09:14:27Z', 0, ${OPENED_TX},
+      ${JSON.stringify({ flagger: EVENT_FLAGGER, reasonHash: REASON_HASH, previousStatus: 'alive' })}::jsonb)`.execute(
     test.database,
   );
 }, CONTAINER_START_MS);
@@ -194,6 +207,113 @@ describe('POST /api/v1/flags refuses', () => {
   );
 });
 
+// docs/BE/features/flags.md §2, FR-170.
+describe('GET /api/v1/operator/trees/:treeId/flags/:flagId', () => {
+  it('answers the §2 example for open flag 3091: the flagger and previous status come from the indexed event', async () => {
+    const response = await readFlag('3091', OPEN_FLAG_ID);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      flag: {
+        id: OPEN_FLAG_ID,
+        treeId: '3091',
+        status: 'open',
+        reasonText: REASON,
+        reasonHash: REASON_HASH,
+        flaggerAddress: EVENT_FLAGGER,
+        openedAt: '2026-10-20T09:14:27.000Z',
+        openedTxHash: OPENED_TX,
+        previousStatus: 'alive',
+        resolutionNote: null,
+        resolvedAt: null,
+        resolvedTxHash: null,
+      },
+      tree: {
+        treeId: '3091',
+        status: 'flagged',
+        campaign: { address: ROOTS, title: 'Roots that stay' },
+      },
+      resolutionJob: null,
+    });
+  });
+
+  it('a pending flag has no event: the flagger is the saver, and the previous status and opening are null', async () => {
+    const response = await readFlag('3104', PENDING_FLAG_ID);
+
+    expect(response.status).toBe(200);
+    expect(response.body.flag).toMatchObject({
+      status: 'pending',
+      flaggerAddress: ALEX_WALLET,
+      previousStatus: null,
+      openedAt: null,
+      openedTxHash: null,
+    });
+    expect(response.body.tree.status).toBe('alive');
+  });
+
+  it('a decided flag reads as such', async () => {
+    const response = await readFlag('3001', UPHELD_FLAG_ID);
+
+    expect(response.status).toBe(200);
+    expect(response.body.flag.status).toBe('upheld');
+  });
+});
+
+describe('GET /api/v1/operator/trees/:treeId/flags/:flagId refuses', () => {
+  it.each([
+    {
+      name: 'a flag of another tree',
+      treeId: '3001',
+      flagId: OPEN_FLAG_ID,
+      status: 404,
+      code: 'not_found',
+    },
+    { name: 'an unknown flag', treeId: '3091', flagId: UNKNOWN_ID, status: 404, code: 'not_found' },
+    {
+      name: 'a malformed tree id',
+      treeId: '0',
+      flagId: OPEN_FLAG_ID,
+      status: 400,
+      code: 'invalid_path',
+    },
+    {
+      name: 'a tree id past bigint',
+      treeId: '9223372036854775808',
+      flagId: OPEN_FLAG_ID,
+      status: 400,
+      code: 'invalid_path',
+    },
+    {
+      name: 'a malformed flag id',
+      treeId: '3091',
+      flagId: '1f6c2a9e',
+      status: 400,
+      code: 'invalid_path',
+    },
+    {
+      name: 'a donor',
+      treeId: '3091',
+      flagId: OPEN_FLAG_ID,
+      userId: ALEX,
+      status: 403,
+      code: 'forbidden_role',
+    },
+    {
+      name: 'a planter',
+      treeId: '3091',
+      flagId: OPEN_FLAG_ID,
+      userId: SARI,
+      status: 403,
+      code: 'forbidden_role',
+    },
+  ])('$name answers $status $code', async ({ treeId, flagId, userId = RAKA, status, code }) => {
+    const response = await readFlag(treeId, flagId, userId);
+
+    expect(response.status).toBe(status);
+    expect(response.body.error.code).toBe(code);
+  });
+});
+
 // docs/BE/features/flags.md §3, FR-171, jobs.md §3.
 describe('POST /api/v1/operator/flags/:id/resolve', () => {
   it('queues resolve_flag for open flag 3091 with the frozen payload; the note is stored, the status is not', async () => {
@@ -301,4 +421,32 @@ describe('POST /api/v1/operator/flags/:id/resolve refuses', () => {
       expect(response.body.error.code).toBe(code);
     },
   );
+});
+
+// §2 "After a decision is queued": the note and the job, with the raw worker error that operators alone see (NFR-055).
+describe('GET /api/v1/operator/trees/:treeId/flags/:flagId with a decision queued', () => {
+  it('shows the stored note and the resolve_flag job with its lastError', async () => {
+    const [job] = await jobsKeyed(OPEN_FLAG_ID);
+
+    await sql`update public.relayer_jobs set last_error = 'nonce too low' where id = ${job?.id}`.execute(
+      test.database,
+    );
+
+    const response = await readFlag('3091', OPEN_FLAG_ID);
+
+    expect(response.body.flag).toMatchObject({
+      status: 'open',
+      resolutionNote: 'Stump only on the second visit',
+    });
+    expect(response.body.resolutionJob).toEqual({
+      id: job?.id,
+      kind: 'resolve_flag',
+      status: 'pending',
+      attempts: 0,
+      txHash: null,
+      lastError: 'nonce too low',
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+    });
+  });
 });

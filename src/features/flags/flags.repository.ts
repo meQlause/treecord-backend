@@ -14,7 +14,33 @@ type NewFlag = {
 
 type Resolution = { note: string; noteHash: string; profileId: string };
 
+/** §2: what S29 reads, for an operator. */
+const operatorReads = (database: Kysely<DB>) => ({
+  /** The flag under its own tree, with that tree's status and its campaign's title. */
+  operatorFlag: (treeId: string, flagId: string) =>
+    database
+      .selectFrom('flags as f')
+      .innerJoin('trees as t', 't.tree_id', 'f.tree_id')
+      .innerJoin('campaigns as c', 'c.address', 't.campaign_address')
+      .selectAll('f')
+      .select(['t.status as tree_status', 'c.title as campaign_title'])
+      .where('f.id', '=', flagId)
+      .where('f.tree_id', '=', treeId)
+      .executeTakeFirst(),
+
+  /** The indexed `TreeFlagged` event of the transaction that opened the flag: who sent it, and the status before. */
+  flaggedEvent: (treeId: string, txHash: string) =>
+    database
+      .selectFrom('tree_events')
+      .select('data')
+      .where('tree_id', '=', treeId)
+      .where('kind', '=', 'flagged')
+      .where('tx_hash', '=', txHash)
+      .executeTakeFirst(),
+});
+
 export const flagsRepository = (database: Kysely<DB>) => ({
+  ...operatorReads(database),
   tree: (treeId: string) =>
     database
       .selectFrom('trees')

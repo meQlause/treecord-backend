@@ -228,6 +228,11 @@ const MATRIX: AccessMatrix = {
     },
     ok: 201,
   },
+  'GET /operator/trees/:treeId/flags/:flagId': {
+    allowed: ['operator'],
+    probe: { method: 'get', path: `/api/v1/operator/trees/${TREE_ID}/flags/${OPEN_FLAG_ID}` },
+    ok: 200,
+  },
   'POST /operator/flags/:id/resolve': {
     allowed: ['operator'],
     probe: {
