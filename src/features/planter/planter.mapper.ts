@@ -1,5 +1,11 @@
 import { MILESTONE_DUE_UNITS } from '../../generated/frozen/constants.js';
-import { reasonsOf, targetChecks, type EvidenceKind, type TargetFacts } from '../evidence/index.js';
+import {
+  pipelineOf,
+  reasonsOf,
+  targetChecks,
+  type EvidenceKind,
+  type TargetFacts,
+} from '../evidence/index.js';
 import type { ChallengeRow, LiveRow, SlotRow, TreeRow, UploadRow } from './planter.repository.js';
 import { IN_FLIGHT } from './planter.repository.js';
 import {
@@ -196,35 +202,6 @@ export const toChallengeItem = (challenge: ChallengeRow, context: TreeContext) =
 };
 
 type PrecheckRow = { ok: boolean | null; reason: string | null; value: string };
-
-/** FR-117 (evidence.md §4): the step reached, and where a rejected or failed one stopped. */
-const pipelineOf = (upload: UploadRow) => {
-  const precheckFailed = ((upload.precheck_results ?? []) as PrecheckRow[]).some(
-    (checked) => checked.ok === false,
-  );
-  const steps: Record<string, number> = {
-    queued: 1,
-    uploaded: 1,
-    checking: 2,
-    scored: 3,
-    passed: 3,
-    needs_review: 3,
-    attested: 4,
-    onchain: 5,
-  };
-
-  if (upload.status !== 'rejected' && upload.status !== 'failed') {
-    return { step: steps[upload.status] ?? 1, failedAt: null };
-  }
-
-  if (precheckFailed) {
-    return { step: 2, failedAt: 'prechecks' };
-  }
-
-  return upload.status === 'failed' && upload.attestation !== null
-    ? { step: 4, failedAt: 'attested' }
-    : { step: 3, failedAt: 'scored' };
-};
 
 /** FR-112: why a rejected one came back, first that applies: prechecks, then the reviewer, then the policy. */
 const rejectionOf = (upload: UploadRow) => {

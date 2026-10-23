@@ -329,3 +329,127 @@ describe('POST /api/v1/evidence/upload-url refuses', () => {
     expect(response.body.error.code).toBe(code);
   });
 });
+
+const RAKA = 'did:privy:cm2raka0000000000000000';
+const AUDITOR = 'did:privy:cm2auditor000000000000';
+
+const detail = async (submissionId: string, userId: string) =>
+  request(api.app)
+    .get(`/api/v1/evidence/${submissionId}`)
+    .set(await api.signedIn(userId));
+
+// docs/BE/features/evidence.md §4, FR-113–FR-118, FR-155, ADR-008, ADR-020.
+describe('GET /api/v1/evidence/:submissionId', () => {
+  beforeAll(async () => {
+    await aProfile(test.database, 'operator', RAKA);
+    await sql`update public.submissions set
+        keyframe_paths = ${[`${IN_REVIEW}/0.jpg`, `${IN_REVIEW}/1.jpg`]},
+        policy_decision = 'needs_review', policy_score = 8550, reject_reasons = '{liveness_borderline}',
+        ai_response = ${JSON.stringify({
+          submissionId: IN_REVIEW,
+          modelVersion: 'treecord-ai-0.1',
+          scores: {
+            liveness: 0.75,
+            recapture: 0.08,
+            treePresence: 0.94,
+            speciesMatch: 0.71,
+            growthConsistency: 0.82,
+            duplicate: { maxSimilarity: 0.05, matchedSubmissionId: null },
+            challengeVisible: null,
+            ndvi: { value: 0.41, source: 'sentinel2-sample', date: '2026-10-01' },
+            tagDecoded: 'TC-M3XV-7GPD',
+          },
+          keyframes: ['raw-keyframe-urls-stay-inside'],
+        })}::jsonb
+      where id = ${IN_REVIEW}`.execute(test.database);
+  });
+
+  it("answers its owner: the record, the AI's scores by known keys, and 15-minute keyframe links", async () => {
+    const response = await detail(IN_REVIEW, SARI);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      id: IN_REVIEW,
+      kind: 'ALIVE',
+      status: 'needs_review',
+      campaign: ROOTS_CAMPAIGN,
+      slotId: null,
+      treeId: '3104',
+      milestone: 2,
+      month: 6,
+      deviceId: DEVICE_ID,
+      rejectReasons: ['liveness_borderline'],
+      policyDecision: 'needs_review',
+      policyScore: 8550,
+      ai: {
+        modelVersion: 'treecord-ai-0.1',
+        scores: {
+          liveness: 0.75,
+          duplicate: { maxSimilarity: 0.05, matchedSubmissionId: null },
+          ndvi: { value: 0.41, source: 'sentinel2-sample' },
+          tagDecoded: 'TC-M3XV-7GPD',
+        },
+      },
+      keyframes: { expiresAt: '2026-10-23T03:27:44.000Z' },
+      challenge: null,
+      review: null,
+      pipeline: { step: 3, failedAt: null },
+      txHash: null,
+    });
+    expect(response.body.ai).not.toHaveProperty('keyframes');
+    expect(response.body.keyframes.urls).toHaveLength(2);
+    expect(response.body.keyframes.urls[0]).toContain(`/keyframes/${IN_REVIEW}/0.jpg?`);
+    expect(response.body.keyframes.urls[0]).toContain('X-Amz-Expires=900&');
+    expect(response.body).not.toHaveProperty('error');
+  });
+});
+
+describe('GET /api/v1/evidence/:submissionId: who reads it', () => {
+  it('answers an operator, who alone sees why a failed submission failed (NFR-055)', async () => {
+    await sql`update public.submissions set status = 'failed', error = 'AI service unavailable'
+      where id = ${IN_REVIEW}`.execute(test.database);
+
+    const owner = await detail(IN_REVIEW, SARI);
+    const operator = await detail(IN_REVIEW, RAKA);
+
+    await sql`update public.submissions set status = 'needs_review', error = null
+      where id = ${IN_REVIEW}`.execute(test.database);
+    expect(operator.status).toBe(200);
+    expect(operator.body.error).toBe('AI service unavailable');
+    expect(owner.body).not.toHaveProperty('error');
+  });
+
+  it('its owner still reads it after switching to donor: ownership decides, not the role', async () => {
+    await sql`update public.profiles set role = 'donor' where privy_user_id = ${SARI}`.execute(
+      test.database,
+    );
+
+    const response = await detail(IN_REVIEW, SARI);
+
+    await sql`update public.profiles set role = 'planter' where privy_user_id = ${SARI}`.execute(
+      test.database,
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it.each([
+    ['another planter', DEWI, 404, 'not_found'],
+    ['a donor', DONOR, 404, 'not_found'],
+    [
+      'an auditor without the tree in a session (REG-005 with the audit feature)',
+      AUDITOR,
+      404,
+      'not_found',
+    ],
+  ])('%s gets %i, never 403', async (_case, userId, status, code) => {
+    const response = await detail(IN_REVIEW, userId);
+
+    expect(response.status).toBe(status);
+    expect(response.body.error.code).toBe(code);
+  });
+
+  it('a malformed id is 400 invalid_path; an unknown one 404', async () => {
+    expect((await detail('5c1e9a7d', SARI)).body.error.code).toBe('invalid_path');
+    expect((await detail('0b6c2f1e-4d8a-4c3b-9e7f-1a2b3c4d5e6f', SARI)).status).toBe(404);
+  });
+});

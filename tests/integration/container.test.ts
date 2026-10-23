@@ -90,6 +90,12 @@ const submissionOf = async (owner: Role | 'other'): Promise<Probe> => {
   };
 };
 
+// the same queued submission, read back by its owner
+const submissionReadOf = async (owner: Role | 'other'): Promise<Probe> => ({
+  method: 'get',
+  path: (await submissionOf(owner)).path.replace(/\/submit$/, ''),
+});
+
 const jobOf = async (owner: Role | 'other'): Promise<Probe> => ({
   method: 'get',
   path: `/api/v1/jobs/${await aJob(test.database, profileOf.get(owner) ?? null)}`,
@@ -248,6 +254,12 @@ const MATRIX: AccessMatrix = {
     probe: submissionOf,
     ok: 503,
     foreign: () => submissionOf('other'),
+  },
+  'GET /evidence/:submissionId': {
+    allowed: ROLES,
+    probe: submissionReadOf,
+    ok: 200,
+    foreign: () => submissionReadOf('other'),
   },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {

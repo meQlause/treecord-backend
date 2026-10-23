@@ -19,11 +19,12 @@ import {
 } from './evidence.repository.js';
 import type { CaptureTargetQuery, UploadUrlBody } from './evidence.schema.js';
 import { linkChecks, reasonsOf } from './prechecks/prechecks.rules.js';
+import { toDetail } from './evidence.mapper.js';
 import { createSubmitService } from './submission.service.js';
 
 type EvidenceDependencies = {
   database: DatabaseClient;
-  storage: Pick<Storage, 'presignPut' | 'sha256Of'>;
+  storage: Pick<Storage, 'presignGet' | 'presignPut' | 'sha256Of'>;
   /** The latest block's time: windows and replant deadlines (REG-009). */
   chainNow: () => Promise<Date>;
   /** The server clock: challenge expiry. */
@@ -200,6 +201,35 @@ const uploadUrlOf = ({ repository, storage, chainNow, now }: Services) => {
   };
 };
 
+const KEYFRAMES_BUCKET = 'keyframes';
+// ADR-020: the keyframe links live as long as every other link the API hands out
+const LINK_MS = 900_000;
+
+/** §4: the owner and operators read a submission; for anyone else it does not exist (ADR-008). The sampling
+ *  auditor's access (REG-005) comes with the audit feature, which owns its access log. */
+const detailOf =
+  ({ repository, storage, now }: Services) =>
+  async (caller: { id: string; role: string }, submissionId: string) => {
+    const row = await repository.detail(submissionId);
+    const operator = caller.role === 'operator';
+
+    if (row === undefined || (row.profile_id !== caller.id && !operator)) {
+      throw new DomainError('not_found');
+    }
+
+    const urls = await Promise.all(
+      row.keyframe_paths.map((path) => storage.presignGet(KEYFRAMES_BUCKET, path)),
+    );
+
+    return toDetail(row, {
+      keyframes: {
+        urls,
+        expiresAt: urls.length === 0 ? null : new Date(now().getTime() + LINK_MS).toISOString(),
+      },
+      withError: operator,
+    });
+  };
+
 /** docs/BE/features/evidence.md: a planter's evidence, from the capture target onwards. */
 export const createEvidenceService = (dependencies: EvidenceDependencies) => {
   const services = { ...dependencies, repository: evidenceRepository(dependencies.database) };
@@ -208,5 +238,6 @@ export const createEvidenceService = (dependencies: EvidenceDependencies) => {
     captureTarget: captureTargetOf(services),
     uploadUrl: uploadUrlOf(services),
     submit: createSubmitService(dependencies),
+    detail: detailOf(services),
   };
 };

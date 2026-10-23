@@ -19,29 +19,52 @@ type Caller = Parameters<EvidenceService['captureTarget']>[0];
 /** Private routes, mounted under /api/v1 behind authentication (evidence §1–§5). */
 export const evidenceRouter = (evidence: EvidenceService): Router =>
   Router()
-    .use('/evidence', allowRoles('planter'))
-    .get('/evidence/capture-target', validate(captureTargetSchema, 'query'), async (_req, res) => {
-      res.json(
-        await evidence.captureTarget(
+    .get(
+      '/evidence/capture-target',
+      allowRoles('planter'),
+      validate(captureTargetSchema, 'query'),
+      async (_req, res) => {
+        res.json(
+          await evidence.captureTarget(
+            res.locals['profile'] as Caller,
+            res.locals['query'] as CaptureTargetQuery,
+          ),
+        );
+      },
+    )
+    .post(
+      '/evidence/upload-url',
+      allowRoles('planter'),
+      validate(uploadUrlSchema),
+      async (_req, res) => {
+        const { status, body } = await evidence.uploadUrl(
           res.locals['profile'] as Caller,
-          res.locals['query'] as CaptureTargetQuery,
+          res.locals['body'] as UploadUrlBody,
+        );
+
+        res.status(status).json(body);
+      },
+    )
+    .post(
+      '/evidence/:submissionId/submit',
+      allowRoles('planter'),
+      validate(submitSchema),
+      async (req, res) => {
+        const { status, body } = await evidence.submit(
+          res.locals['profile'] as Caller,
+          pathParam(z.uuid(), req.params.submissionId),
+          res.locals['body'] as SubmitBody,
+        );
+
+        res.status(status).json(body);
+      },
+    )
+    // no role gate: ownership decides, so a planter who switched to donor still reads their own (evidence §4)
+    .get('/evidence/:submissionId', async (req, res) => {
+      res.json(
+        await evidence.detail(
+          res.locals['profile'] as { id: string; role: string },
+          pathParam(z.uuid(), req.params.submissionId),
         ),
       );
-    })
-    .post('/evidence/upload-url', validate(uploadUrlSchema), async (_req, res) => {
-      const { status, body } = await evidence.uploadUrl(
-        res.locals['profile'] as Caller,
-        res.locals['body'] as UploadUrlBody,
-      );
-
-      res.status(status).json(body);
-    })
-    .post('/evidence/:submissionId/submit', validate(submitSchema), async (req, res) => {
-      const { status, body } = await evidence.submit(
-        res.locals['profile'] as Caller,
-        pathParam(z.uuid(), req.params.submissionId),
-        res.locals['body'] as SubmitBody,
-      );
-
-      res.status(status).json(body);
     });

@@ -14,6 +14,7 @@ const LIVE = [
   'onchain',
 ] as const;
 const IN_FLIGHT = ['uploaded', 'checking', 'scored', 'passed', 'needs_review', 'attested'] as const;
+const CAMPAIGNS = 'campaigns as c';
 const HELD_COLUMNS = ['id', 'status', 'milestone', 'device_id'] as const;
 const CAMPAIGN_COLUMNS = [
   'c.address',
@@ -27,7 +28,7 @@ const CAMPAIGN_COLUMNS = [
 const slotReads = (database: Kysely<DB>) => ({
   slotTarget: (campaign: string, slotId: string) =>
     database
-      .selectFrom('campaigns as c')
+      .selectFrom(CAMPAIGNS)
       .leftJoin('slots as sl', (join) =>
         join.onRef('sl.campaign_address', '=', 'c.address').on('sl.slot_id', '=', Number(slotId)),
       )
@@ -69,7 +70,7 @@ const treeReads = (database: Kysely<DB>) => ({
   treeTarget: (treeId: string) =>
     database
       .selectFrom('trees as t')
-      .innerJoin('campaigns as c', 'c.address', 't.campaign_address')
+      .innerJoin(CAMPAIGNS, 'c.address', 't.campaign_address')
       .select([
         ...CAMPAIGN_COLUMNS,
         sql<string>`t.tree_id::text`.as('tree_id'),
@@ -206,6 +207,70 @@ const submitReads = (database: Kysely<DB>) => ({
   },
 });
 
+/** §4: one submission as S21 and S28 show it, with its campaign, landed tree and newest job. */
+const detailReads = (database: Kysely<DB>) => ({
+  detail: (id: string) =>
+    database
+      .selectFrom('submissions as sub')
+      .innerJoin(CAMPAIGNS, 'c.address', 'sub.campaign_address')
+      .leftJoin('trees as landed', (join) =>
+        join
+          .onRef('landed.campaign_address', '=', 'sub.campaign_address')
+          .onRef('landed.slot_id', '=', 'sub.slot_id'),
+      )
+      .leftJoin('challenges as ch', 'ch.id', 'sub.challenge_id')
+      .select([
+        'sub.id',
+        'sub.profile_id',
+        'sub.kind',
+        'sub.status',
+        'c.address',
+        'c.title',
+        'c.region_name',
+        'c.region_radius_m',
+        'sub.slot_id',
+        sql<string | null>`coalesce(sub.tree_id, landed.tree_id)::text`.as('tree_id'),
+        'sub.milestone',
+        'sub.captured_at',
+        'sub.received_at',
+        'sub.updated_at',
+        sql<number | null>`sub.duration_sec::float8`.as('duration_sec'),
+        'sub.size_bytes',
+        'sub.device_id',
+        'sub.video_sha256',
+        'sub.payload',
+        'sub.canonical',
+        'sub.signature',
+        'sub.evidence_hash',
+        'sub.precheck_results',
+        'sub.reject_reasons',
+        'sub.policy_decision',
+        'sub.policy_score',
+        'sub.ai_response',
+        'sub.keyframe_paths',
+        'sub.attestation',
+        'ch.id as challenge_id',
+        'ch.code as challenge_code',
+        'sub.review_note',
+        'sub.reviewed_at',
+        'sub.tx_hash',
+        'sub.error',
+        (builder) =>
+          builder
+            .selectFrom('relayer_jobs')
+            .select('relayer_jobs.id')
+            .where('relayer_jobs.idempotency_key', 'in', [
+              sql<string>`'score:' || sub.id`,
+              sql<string>`'attestation:' || sub.id`,
+            ])
+            .orderBy('relayer_jobs.created_at', 'desc')
+            .limit(1)
+            .as('job_id'),
+      ])
+      .where('sub.id', '=', id)
+      .executeTakeFirst(),
+});
+
 export { IN_FLIGHT };
 
 export const evidenceRepository = (database: Kysely<DB>) => ({
@@ -213,6 +278,7 @@ export const evidenceRepository = (database: Kysely<DB>) => ({
   ...treeReads(database),
   ...linkReads(database),
   ...submitReads(database),
+  ...detailReads(database),
 });
 
 export type EvidenceRepository = ReturnType<typeof evidenceRepository>;
@@ -228,3 +294,5 @@ export type HeldRow = NonNullable<Rows<'livePlanting'>>;
 export type HolderRow = NonNullable<Rows<'holderOf'>>;
 
 export type SubmissionRow = NonNullable<Rows<'submission'>>;
+
+export type DetailRow = NonNullable<Rows<'detail'>>;

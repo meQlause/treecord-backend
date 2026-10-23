@@ -1,5 +1,5 @@
 import { CHECK_IN_RADIUS_M, MILESTONE_DUE_UNITS } from '../../generated/frozen/constants.js';
-import type { HeldRow, SlotTarget, TreeTarget } from './evidence.repository.js';
+import type { DetailRow, HeldRow, SlotTarget, TreeTarget } from './evidence.repository.js';
 import { reasonsOf, targetChecks, type TargetFacts } from './prechecks/prechecks.rules.js';
 
 const monthOf = (milestone: number): number => MILESTONE_DUE_UNITS[milestone] ?? 0;
@@ -106,3 +106,131 @@ export const toTreeTarget = (target: TreeTargetFacts, chainTime: Date) => {
     chainTime: chainTime.toISOString(),
   };
 };
+
+type PrecheckRow = { ok: boolean | null };
+
+const STEP_OF: Readonly<Record<string, number>> = {
+  queued: 1,
+  uploaded: 1,
+  checking: 2,
+  scored: 3,
+  passed: 3,
+  needs_review: 3,
+  attested: 4,
+  onchain: 5,
+};
+
+/** FR-117: the step reached, and for a rejected or failed submission where it stopped. */
+export const pipelineOf = ({
+  status,
+  precheck_results: results,
+  attestation,
+}: {
+  status: string;
+  precheck_results: unknown;
+  attestation: unknown;
+}): { step: number; failedAt: string | null } => {
+  if (status !== 'rejected' && status !== 'failed') {
+    return { step: STEP_OF[status] ?? 1, failedAt: null };
+  }
+
+  if (((results ?? []) as PrecheckRow[]).some((checked) => checked.ok === false)) {
+    return { step: 2, failedAt: 'prechecks' };
+  }
+
+  return status === 'failed' && attestation !== null
+    ? { step: 4, failedAt: 'attested' }
+    : { step: 3, failedAt: 'scored' };
+};
+
+type Raw = Record<string, unknown> | null | undefined;
+
+/** The named keys of an object, each null when absent: nothing else passes through. */
+const pick = (raw: Raw, keys: readonly string[]) =>
+  Object.fromEntries(keys.map((key) => [key, raw?.[key] ?? null]));
+
+/** FR-116, FR-155: the AI's scores by known keys only; the raw response (its keyframe URLs, notes) never leaves. */
+const aiOf = (response: unknown) => {
+  if (response === null || response === undefined) {
+    return null;
+  }
+
+  const { modelVersion, scores } = response as {
+    modelVersion?: string;
+    scores?: Record<string, Raw>;
+  };
+  const raw: Record<string, Raw> = scores ?? {};
+
+  return {
+    modelVersion: modelVersion ?? null,
+    scores: {
+      ...pick(raw as Raw, [
+        'liveness',
+        'recapture',
+        'treePresence',
+        'speciesMatch',
+        'growthConsistency',
+      ]),
+      duplicate: pick(raw['duplicate'], ['maxSimilarity', 'matchedSubmissionId']),
+      ...pick(raw as Raw, ['challengeVisible']),
+      ndvi: raw['ndvi'] ? pick(raw['ndvi'], ['value', 'source']) : null,
+      ...pick(raw as Raw, ['tagDecoded']),
+    },
+  };
+};
+
+/** FR-116, FR-156: the reviewer's decision once one exists. */
+const reviewOf = (row: DetailRow) =>
+  row.reviewed_at === null
+    ? null
+    : {
+        note: row.review_note,
+        reviewedAt: row.reviewed_at.toISOString(),
+        decision: row.status === 'rejected' ? 'rejected' : 'approved',
+      };
+
+/** §4: one submission for S21 and S28. `withError` for operators only (NFR-055). */
+export const toDetail = (
+  row: DetailRow,
+  {
+    keyframes,
+    withError,
+  }: { keyframes: { urls: string[]; expiresAt: string | null }; withError: boolean },
+) => ({
+  id: row.id,
+  kind: row.kind,
+  status: row.status,
+  campaign: {
+    address: row.address,
+    title: row.title,
+    regionName: row.region_name,
+    regionRadiusM: row.region_radius_m,
+  },
+  slotId: row.slot_id === null ? null : String(row.slot_id),
+  treeId: row.tree_id,
+  milestone: row.milestone,
+  month: monthOf(row.milestone),
+  capturedAt: row.captured_at?.toISOString() ?? null,
+  receivedAt: row.received_at.toISOString(),
+  updatedAt: row.updated_at.toISOString(),
+  durationSec: row.duration_sec,
+  sizeBytes: row.size_bytes,
+  deviceId: row.device_id,
+  videoSha256: row.video_sha256,
+  payload: row.payload,
+  canonical: row.canonical,
+  signature: row.signature,
+  evidenceHash: row.evidence_hash,
+  precheckResults: row.precheck_results ?? [],
+  rejectReasons: row.reject_reasons,
+  policyDecision: row.policy_decision,
+  policyScore: row.policy_score,
+  ai: aiOf(row.ai_response),
+  keyframes,
+  challenge: row.challenge_id === null ? null : { id: row.challenge_id, code: row.challenge_code },
+  review: reviewOf(row),
+  pipeline: pipelineOf(row),
+  jobId: row.job_id,
+  txHash: row.tx_hash,
+  ...(withError && row.status === 'failed' ? { error: row.error } : {}),
+});
