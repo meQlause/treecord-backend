@@ -298,6 +298,13 @@ const uploadList =
     };
   };
 
+/** planter §5: the tag service B5b's capture target calls before answering, on its client or transaction. */
+export const issueSlotTags = (
+  database: DatabaseClient,
+  randomBytes: RandomBytes,
+  slots: { campaign: string; slotId: number }[],
+) => ensureSlotTags(planterRepository(database), randomBytes, slots);
+
 /** docs/BE/features/planter.md: the planter workspace lists. */
 export const createPlanterService = (dependencies: PlanterDependencies) => {
   const lists = { ...dependencies, repository: planterRepository(dependencies.database) };
