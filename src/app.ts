@@ -1,17 +1,22 @@
 import express, { type Express } from 'express';
+import type { Logger } from 'pino';
+import { pinoHttp } from 'pino-http';
 import { healthRouter, type ReadinessProbes } from './features/health/health.routes.js';
 import { errorHandler, notFound } from './shared/http/error-handler.js';
 import { requestId } from './shared/http/request-id.js';
 
-export type AppDependencies = {
-  readiness: ReadinessProbes;
-  logUnexpected: (error: unknown, requestId: string) => void;
-};
+export type AppDependencies = { readiness: ReadinessProbes; logger: Logger };
 
 /** Builds the Express app; middleware order is docs/BE/be-architecture.md §5. */
-export const createApp = ({ readiness, logUnexpected }: AppDependencies): Express =>
+export const createApp = ({ readiness, logger }: AppDependencies): Express =>
   express()
     .use(requestId)
+    .use(pinoHttp({ logger, genReqId: (_req, res) => String(res.getHeader('x-request-id')) }))
     .use(healthRouter(readiness))
     .use(notFound)
-    .use(errorHandler({ logUnexpected }));
+    .use(
+      errorHandler({
+        logUnexpected: (error, id) =>
+          logger.error({ err: error, requestId: id }, 'unexpected error'),
+      }),
+    );

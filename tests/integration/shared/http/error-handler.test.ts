@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { createApp } from '../../../../src/app.js';
 import { DomainError, ERROR_REGISTRY } from '../../../../src/shared/errors.js';
 import { errorHandler, notFound } from '../../../../src/shared/http/error-handler.js';
+import { createLogger } from '../../../../src/shared/http/logger.js';
 import { requestId } from '../../../../src/shared/http/request-id.js';
 
 // docs/error-handling.md §3 — one status per code, exactly these 40 codes.
@@ -72,7 +73,7 @@ describe('error envelope — docs/error-handling.md §1–§3', () => {
   });
 
   it('an unknown route answers 404 not_found in the envelope', async () => {
-    const response = await request(createApp({ readiness, logUnexpected: vi.fn() }))
+    const response = await request(createApp({ readiness, logger: createLogger('silent') }))
       .get('/api/v1/nowhere')
       .expect(404);
 
