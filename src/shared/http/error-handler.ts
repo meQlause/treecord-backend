@@ -63,10 +63,15 @@ const MATCHERS: ReadonlyArray<(error: unknown) => Outcome | undefined> = [
     error instanceof ZodError
       ? {
           code: 'validation_error',
-          details: error.issues.map((issue) => ({
-            path: issue.path.join('.'),
-            message: issue.message,
-          })),
+          // an unknown field is named in the path, one entry per field (devices §2: path publicKeyJwk.d)
+          details: error.issues.flatMap((issue) =>
+            issue.code === 'unrecognized_keys'
+              ? issue.keys.map((key) => ({
+                  path: [...issue.path, key].join('.'),
+                  message: issue.message,
+                }))
+              : [{ path: issue.path.join('.'), message: issue.message }],
+          ),
         }
       : undefined,
   (error) => BODY_ERRORS[String((error as { type?: unknown } | null)?.type)],

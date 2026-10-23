@@ -103,7 +103,7 @@ describe('error envelope — docs/error-handling.md §1–§3', () => {
     expect(response.body.error.code).toBe('validation_error');
     expect(response.body.error.details).toEqual([
       { path: 'count', message: expect.any(String) },
-      { path: '', message: expect.stringContaining('extra') },
+      { path: 'extra', message: expect.stringContaining('extra') },
     ]);
   });
 

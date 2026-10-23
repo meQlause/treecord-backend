@@ -1,4 +1,6 @@
+import { calculateJwkThumbprint } from 'jose';
 import { sql } from 'kysely';
+import { generateKeyPairSync } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
@@ -25,6 +27,28 @@ let test: TestDatabase;
 let api: TestApi;
 // Profile ids by role, and one more user who owns the foreign records.
 const profileOf = new Map<Role | 'other', string>();
+
+// a fresh public P-256 key, as a browser registers it
+const publicKey = () => {
+  const { kty, crv, x, y } = generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({
+    format: 'jwk',
+  });
+
+  return { kty, crv, x, y } as { kty: string; crv: string; x: string; y: string };
+};
+
+const deviceOf = async (owner: Role | 'other'): Promise<Probe> => {
+  const key = publicKey();
+  const [device] = (
+    await sql<{
+      id: string;
+    }>`insert into public.devices (profile_id, public_key_jwk, thumbprint, label)
+      values (${profileOf.get(owner)}, ${JSON.stringify(key)}::jsonb, ${await calculateJwkThumbprint(key, 'sha256')},
+        'Matrix') returning id`.execute(test.database)
+  ).rows;
+
+  return { method: 'delete', path: `/api/v1/devices/${device?.id}` };
+};
 
 const jobOf = async (owner: Role | 'other'): Promise<Probe> => ({
   method: 'get',
@@ -109,6 +133,26 @@ const MATRIX: AccessMatrix = {
     allowed: ['donor', 'operator'],
     probe: { method: 'get', path: '/api/v1/donor/campaigns' },
     ok: 200,
+  },
+  'GET /devices': {
+    allowed: ['planter'],
+    probe: { method: 'get', path: '/api/v1/devices' },
+    ok: 200,
+  },
+  'POST /devices': {
+    allowed: ['planter'],
+    probe: async () => ({
+      method: 'post',
+      path: '/api/v1/devices',
+      body: { publicKeyJwk: publicKey(), label: 'Matrix' },
+    }),
+    ok: 201,
+  },
+  'DELETE /devices/:id': {
+    allowed: ['planter'],
+    probe: deviceOf,
+    ok: 200,
+    foreign: () => deviceOf('other'),
   },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {

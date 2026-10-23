@@ -216,8 +216,8 @@ describe('POST /api/v1/profile refuses a malformed body or a taken wallet', () =
 
   it.each([
     ['an empty body', {}, ''],
-    ['a server-owned field', { walletAddress: SARI_WALLET }, ''],
-    ['an unknown field', { nickname: 'Sari' }, ''],
+    ['a server-owned field', { walletAddress: SARI_WALLET }, 'walletAddress'],
+    ['an unknown field', { nickname: 'Sari' }, 'nickname'],
     ['a role other than donor or planter', { role: 'operator' }, 'role'],
     [
       'an agreement sent as false',

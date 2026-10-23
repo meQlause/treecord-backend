@@ -118,7 +118,7 @@ const MAPPED: Array<[string, (database: DatabaseClient) => Promise<unknown>, Dom
 
       return aDevice(database);
     },
-    new DomainError('device_limit_reached'),
+    new DomainError('device_limit_reached', { max: 3 }),
   ],
   [
     'a wallet that belongs to another profile (profiles_wallet_address_key)',

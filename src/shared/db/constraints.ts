@@ -38,7 +38,7 @@ const BY_CONSTRAINT: Readonly<Record<string, Mapped>> = {
 const CHECK_VIOLATION = '23514';
 const BY_TRIGGER_MESSAGE: Readonly<Record<string, Mapped>> = {
   session_closed: { code: 'session_closed' }, // FR-197, FR-198, FR-200
-  device_limit_reached: { code: 'device_limit_reached' }, // FR-120
+  device_limit_reached: { code: 'device_limit_reached', details: { max: 3 } }, // FR-120, the trigger's limit
 };
 
 type PostgresError = { code?: unknown; constraint?: unknown; message?: unknown } | null;
