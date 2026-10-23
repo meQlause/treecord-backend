@@ -23,6 +23,7 @@ import {
   aJob,
   aPlantedTree,
   aProfile,
+  CAMPAIGN as TREE_CAMPAIGN,
   theSpecies,
   TREE_ID,
 } from '../fixtures/mirror.js';
@@ -113,6 +114,8 @@ const CAMPAIGN = '0x00000000000000000000000000000000000000c1';
 const PLANTING_CAMPAIGN = '0x00000000000000000000000000000000000000c2';
 const PLANTER_WALLET = `0x${'2'.repeat(40)}`;
 const METADATA_ID = '7d5c9b8e-1f4a-4c2e-9a3b-6f0e2d1c4b5a';
+// an open flag on tree 3001, which every role's wallet contributed to
+const OPEN_FLAG_ID = '1f6c2a9e-4b7d-4e15-9a3c-8d2e5f0b7a61';
 let announced = 0;
 const ISSUED_TX = `0x${'1'.repeat(64)}`;
 
@@ -299,6 +302,24 @@ const MATRIX: AccessMatrix = {
     },
     ok: 202,
   },
+  'POST /flags': {
+    allowed: ROLES,
+    probe: {
+      method: 'post',
+      path: '/api/v1/flags',
+      body: { treeId: String(TREE_ID), reasonText: 'Matrix flag reason' },
+    },
+    ok: 201,
+  },
+  'POST /operator/flags/:id/resolve': {
+    allowed: ['operator'],
+    probe: {
+      method: 'post',
+      path: `/api/v1/operator/flags/${OPEN_FLAG_ID}/resolve`,
+      body: { uphold: false, note: 'Matrix' },
+    },
+    ok: 202,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
@@ -316,6 +337,25 @@ const send = async (role: Role, { method, path, body }: Probe) =>
     .set(await api.signedIn(userOf(role)))
     .send(body);
 
+// The wallet of the role at this index in ROLES: 0x1111… for the donor, and so on.
+const roleWallet = (index: number): string => `0x${String(index + 1).repeat(40)}`;
+
+// Every role's wallet contributed to tree 3001's campaign, and the tree has an open flag.
+const flaggableTree = async (): Promise<void> => {
+  for (const [index] of ROLES.entries()) {
+    await sql`insert into public.contributions (campaign_address, contributor_address, amount, total_raised_after,
+        block_number, block_time, log_index, tx_hash)
+      values (${TREE_CAMPAIGN}, ${roleWallet(index)}, 1, 1, 1, now(), ${index}, ${ISSUED_TX})`.execute(
+      test.database,
+    );
+  }
+
+  await sql`insert into public.flags (id, tree_id, campaign_address, flagger_address, reason_text, reason_hash, status)
+    values (${OPEN_FLAG_ID}, ${TREE_ID}, ${TREE_CAMPAIGN}, ${PLANTER_WALLET}, 'Matrix', ${ISSUED_TX}, 'open')`.execute(
+    test.database,
+  );
+};
+
 // One profile per role; roles past donor are granted by hand, as in production.
 beforeAll(async () => {
   test = await startMigratedDatabase();
@@ -324,12 +364,7 @@ beforeAll(async () => {
   for (const role of ROLES) {
     profileOf.set(
       role,
-      await aProfile(
-        test.database,
-        role,
-        userOf(role),
-        `0x${String(ROLES.indexOf(role) + 1).repeat(40)}`,
-      ),
+      await aProfile(test.database, role, userOf(role), roleWallet(ROLES.indexOf(role))),
     );
   }
 
@@ -337,6 +372,8 @@ beforeAll(async () => {
   await aCampaign(test.database, { address: CAMPAIGN });
   await aPlantedTree(test.database);
   await aCampaign(test.database, { address: PLANTING_CAMPAIGN, status: 'active' });
+
+  await flaggableTree();
   await theSpecies(test.database);
   await sql`insert into public.campaign_metadata (id, creator_profile_id, title, species_code, region_name,
       region_center_lat, region_center_lon, region_radius_m)

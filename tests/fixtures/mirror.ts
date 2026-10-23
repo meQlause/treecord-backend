@@ -20,6 +20,14 @@ const AGREEMENT_HASH = hex('1', 64);
 const CREATED_TX = hex('2', 64);
 const EVIDENCE_HASH = hex('3', 64);
 const PLANTED_TX = hex('4', 64);
+// the mockup's split, as the factory event carries it
+const SPLIT = {
+  incentivesBps: 7000,
+  seedlingsBps: 1000,
+  verificationBps: 500,
+  reserveBps: 1000,
+  feeBps: 500,
+};
 
 /** A planter, an auditor, one campaign with one claimed slot, and tree #3001 planted in it. */
 export const aPlantedTree = async (database: DatabaseClient): Promise<void> => {
@@ -34,7 +42,7 @@ export const aPlantedTree = async (database: DatabaseClient): Promise<void> => {
       anchor_slots, open_slots, per_planter_cap, funding_target, funding_deadline, claim_deadline, commitment_units,
       time_unit_seconds, split, metadata_uri, created_block, created_tx)
     values (${CAMPAIGN}, 31337, ${PLANTER_WALLET}, 2500, 'qqguw7p', 1, 0, 1, 50, 1000, now(), now(), 36, 2592000,
-      '{}', 'ipfs://treecord-demo', 1, ${CREATED_TX})`.execute(database);
+      ${JSON.stringify(SPLIT)}::jsonb, 'ipfs://treecord-demo', 1, ${CREATED_TX})`.execute(database);
   await sql`
     insert into public.slots (campaign_address, slot_id, kind, status, planter_address)
     values (${CAMPAIGN}, 1, 'open', 'claimed', ${PLANTER_WALLET})`.execute(database);
@@ -130,13 +138,7 @@ export const aCampaign = async (
       claim_deadline: new Date('2026-12-10T00:00:00.000Z'),
       commitment_units: 36,
       time_unit_seconds: '2592000',
-      split: {
-        incentivesBps: 7000,
-        seedlingsBps: 1000,
-        verificationBps: 500,
-        reserveBps: 1000,
-        feeBps: 500,
-      },
+      split: SPLIT,
       metadata_uri: 'ipfs://treecord-demo',
       created_block: '1',
       created_tx: CREATED_TX,
