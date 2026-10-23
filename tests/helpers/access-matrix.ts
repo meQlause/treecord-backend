@@ -10,6 +10,7 @@ export type Probe = {
   method: 'get' | 'post' | 'put' | 'patch' | 'delete';
   path: string;
   body?: object;
+  headers?: Record<string, string>;
 };
 
 type MatrixEntry = {

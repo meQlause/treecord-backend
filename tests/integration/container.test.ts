@@ -114,6 +114,8 @@ const CAMPAIGN = '0x00000000000000000000000000000000000000c1';
 const PLANTING_CAMPAIGN = '0x00000000000000000000000000000000000000c2';
 const PLANTER_WALLET = `0x${'2'.repeat(40)}`;
 const METADATA_ID = '7d5c9b8e-1f4a-4c2e-9a3b-6f0e2d1c4b5a';
+// an Active mahogany campaign with one unassigned anchor slot, for the operator actions
+const OPS_CAMPAIGN = '0x00000000000000000000000000000000000000c3';
 // an open flag on tree 3001, which every role's wallet contributed to
 const OPEN_FLAG_ID = '1f6c2a9e-4b7d-4e15-9a3c-8d2e5f0b7a61';
 let announced = 0;
@@ -320,6 +322,43 @@ const MATRIX: AccessMatrix = {
     },
     ok: 202,
   },
+  'POST /operator/campaigns/:address/anchor-assignments': {
+    allowed: ['operator'],
+    probe: {
+      method: 'post',
+      path: `/api/v1/operator/campaigns/${OPS_CAMPAIGN}/anchor-assignments`,
+      body: { planter: PLANTER_WALLET, count: 1 },
+    },
+    ok: 202,
+  },
+  'POST /operator/campaigns/:address/estimate': {
+    allowed: ['operator'],
+    probe: {
+      method: 'post',
+      path: `/api/v1/operator/campaigns/${OPS_CAMPAIGN}/estimate`,
+      body: {},
+    },
+    ok: 202,
+  },
+  'POST /operator/campaigns/:address/issuances': {
+    allowed: ['operator'],
+    probe: {
+      method: 'post',
+      path: `/api/v1/operator/campaigns/${OPS_CAMPAIGN}/issuances`,
+      body: { registry: 'SRN', vintage: 2026, serialStart: 'A', serialEnd: 'B', tonnes: '1' },
+      headers: { 'Idempotency-Key': 'matrix-issue' },
+    },
+    ok: 202,
+  },
+  'POST /operator/carbon/batches/:batchId/price': {
+    allowed: ['operator'],
+    probe: {
+      method: 'post',
+      path: '/api/v1/operator/carbon/batches/1/price',
+      body: { usdcPerTonne: '1' },
+    },
+    ok: 202,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
@@ -329,12 +368,13 @@ const MATRIX: AccessMatrix = {
   'GET /jobs/:id': { allowed: ROLES, probe: jobOf, ok: 200, foreign: () => jobOf('other') },
 };
 
-const sendAnonymous = ({ method, path, body }: Probe) => request(api.app)[method](path).send(body);
+const sendAnonymous = ({ method, path, body, headers = {} }: Probe) =>
+  request(api.app)[method](path).set(headers).send(body);
 
-const send = async (role: Role, { method, path, body }: Probe) =>
+const send = async (role: Role, { method, path, body, headers = {} }: Probe) =>
   request(api.app)
     [method](path)
-    .set(await api.signedIn(userOf(role)))
+    .set({ ...(await api.signedIn(userOf(role))), ...headers })
     .send(body);
 
 // The wallet of the role at this index in ROLES: 0x1111… for the donor, and so on.
@@ -356,6 +396,31 @@ const flaggableTree = async (): Promise<void> => {
   );
 };
 
+// One issued batch and one retirement from it, on CAMPAIGN.
+const carbonRecords = async (): Promise<void> => {
+  await sql`insert into public.carbon_batches (batch_id, campaign_address, amount, registry, serial_start,
+      serial_end, vintage, issued_block, issued_tx, issued_at)
+    values (1, ${CAMPAIGN}, 100, 'Verra', 'V-1', 'V-100', 2026, 1, ${ISSUED_TX}, now())`.execute(
+    test.database,
+  );
+  await sql`insert into public.retirements (retirement_id, batch_id, amount, holder_address, beneficiary, purpose,
+      retired_at, log_index, tx_hash)
+    values (1, 1, 10, ${CAMPAIGN}, 'PT Hijau Lestari', '', now(), 0, ${ISSUED_TX})`.execute(
+    test.database,
+  );
+};
+
+// OPS_CAMPAIGN and its anchor slot; the species must be seeded first.
+const operationsCampaign = async (): Promise<void> => {
+  await aCampaign(test.database, {
+    address: OPS_CAMPAIGN,
+    status: 'active',
+    species_code: 'SWIETENIA_MACROPHYLLA',
+  });
+  await sql`insert into public.slots (campaign_address, slot_id, kind, status)
+    values (${OPS_CAMPAIGN}, 1, 'anchor', 'anchor')`.execute(test.database);
+};
+
 // One profile per role; roles past donor are granted by hand, as in production.
 beforeAll(async () => {
   test = await startMigratedDatabase();
@@ -375,6 +440,7 @@ beforeAll(async () => {
 
   await flaggableTree();
   await theSpecies(test.database);
+  await operationsCampaign();
   await sql`insert into public.campaign_metadata (id, creator_profile_id, title, species_code, region_name,
       region_center_lat, region_center_lon, region_radius_m)
     values (${METADATA_ID}, ${profileOf.get('donor')}, 'Matrix', 'PERSEA_AMERICANA', 'Matrix', 0, 0, 100)`.execute(
@@ -384,16 +450,7 @@ beforeAll(async () => {
     values (${PLANTING_CAMPAIGN}, 1, 'open', 'claimed', ${PLANTER_WALLET})`.execute(test.database);
   await sql`insert into public.slot_tags (campaign_address, slot_id, code)
     values (${PLANTING_CAMPAIGN}, 1, 'TC-MATR-2XAA')`.execute(test.database);
-  await sql`insert into public.carbon_batches (batch_id, campaign_address, amount, registry, serial_start,
-      serial_end, vintage, issued_block, issued_tx, issued_at)
-    values (1, ${CAMPAIGN}, 100, 'Verra', 'V-1', 'V-100', 2026, 1, ${ISSUED_TX}, now())`.execute(
-    test.database,
-  );
-  await sql`insert into public.retirements (retirement_id, batch_id, amount, holder_address, beneficiary, purpose,
-      retired_at, log_index, tx_hash)
-    values (1, 1, 10, ${CAMPAIGN}, 'PT Hijau Lestari', '', now(), 0, ${ISSUED_TX})`.execute(
-    test.database,
-  );
+  await carbonRecords();
 }, CONTAINER_START_MS);
 
 afterAll(async () => {

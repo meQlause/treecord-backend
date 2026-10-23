@@ -15,6 +15,11 @@ import { carbonHoldingsRouter, carbonPublicRouter } from './features/carbon/inde
 import { registerDevices, type DevicesCradle } from './features/devices/devices.container.js';
 import { devicesRouter } from './features/devices/index.js';
 import { registerDonor, type DonorCradle } from './features/donor/donor.container.js';
+import {
+  registerOperations,
+  type OperationsCradle,
+} from './features/operations/operations.container.js';
+import { operationsRouter } from './features/operations/index.js';
 import { registerFlags, type FlagsCradle } from './features/flags/flags.container.js';
 import { flagsRouter } from './features/flags/index.js';
 import { registerEvidence, type EvidenceCradle } from './features/evidence/evidence.container.js';
@@ -65,6 +70,7 @@ type SharedCradle = {
 export type Cradle = SharedCradle &
   AccountsCradle &
   FlagsCradle &
+  OperationsCradle &
   JobsCradle &
   CampaignsCradle &
   TreesCradle &
@@ -126,6 +132,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
   registerPlanter(container);
   registerEvidence(container);
   registerFlags(container);
+  registerOperations(container);
 
   return container;
 };
@@ -160,6 +167,7 @@ export const privateRouters = ({
   evidenceService,
   campaignsService,
   flagsService,
+  operationsService,
 }: Cradle): Router[] => [
   accountsRouter(accountsService),
   jobsRouter(jobsService),
@@ -170,4 +178,5 @@ export const privateRouters = ({
   evidenceRouter(evidenceService),
   campaignsPrivateRouter(campaignsService),
   flagsRouter(flagsService),
+  operationsRouter(operationsService),
 ];
