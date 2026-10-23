@@ -11,6 +11,8 @@ export type AppDependencies = {
   logger: Logger;
   jsonBodyLimitKb: number;
   auth: AuthOptions;
+  /** Feature routers anyone may call, mounted under /api/v1 before authentication (be-architecture §5 row 6). */
+  publicRouters: Router[];
   /** Feature routers that need a signed-in caller, mounted under /api/v1 (be-architecture §5 row 8). */
   privateRouters: Router[];
 };
@@ -21,13 +23,21 @@ export const createApp = ({
   logger,
   jsonBodyLimitKb,
   auth,
+  publicRouters,
   privateRouters,
-}: AppDependencies): Express =>
-  express()
+}: AppDependencies): Express => {
+  const app = express()
     .use(requestId)
     .use(pinoHttp({ logger, genReqId: (_req, res) => String(res.getHeader('x-request-id')) }))
     .use(express.json({ limit: `${jsonBodyLimitKb}kb` }))
-    .use(healthRouter(readiness))
+    .use(healthRouter(readiness));
+
+  // one use() each: Express refuses a use() with no handler, and a test app may have no public routers
+  for (const router of publicRouters) {
+    app.use('/api/v1', router);
+  }
+
+  return app
     .use('/api/v1', authenticate(auth), ...privateRouters)
     .use(notFound)
     .use(
@@ -36,3 +46,4 @@ export const createApp = ({
           logger.error({ err: error, requestId: id }, 'unexpected error'),
       }),
     );
+};

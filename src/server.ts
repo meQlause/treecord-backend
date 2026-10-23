@@ -1,23 +1,20 @@
 import { createApp } from './app.js';
 import { readConfig } from './config.js';
-import { createRootContainer, privateRouters } from './container.js';
+import { authOptions, createRootContainer, privateRouters, publicRouters } from './container.js';
 import { pingDatabase } from './shared/db/database.js';
 import { shutdownGracefully } from './shutdown.js';
 
 // NFR-008: a missing or malformed variable stops the process here, before anything listens.
 const config = readConfig();
 const container = createRootContainer(config);
-const { logger, database, chain, verifyToken, accountsService } = container.cradle;
+const { logger, database, chain } = container.cradle;
 
 const server = createApp({
   readiness: { database: () => pingDatabase(database), chain: () => chain.getBlockNumber() },
   logger,
   jsonBodyLimitKb: config.JSON_BODY_LIMIT_KB,
-  auth: {
-    verify: verifyToken,
-    demoWalletAuth: config.DEMO_WALLET_AUTH,
-    resolveProfile: accountsService.resolveProfile,
-  },
+  auth: authOptions(container.cradle),
+  publicRouters: publicRouters(container.cradle),
   privateRouters: privateRouters(container.cradle),
 }).listen(config.PORT);
 

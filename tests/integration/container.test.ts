@@ -15,7 +15,7 @@ import {
   type TestDatabase,
 } from '../helpers/database.js';
 import { fakePrivy } from '../helpers/fake-privy.js';
-import { aJob, aProfile } from '../fixtures/mirror.js';
+import { aCampaign, aJob, aProfile } from '../fixtures/mirror.js';
 
 const userOf = (role: Role): string => `did:privy:cm2matrix${role}000000000`;
 const OTHER_USER = 'did:privy:cm2matrixother0000000000';
@@ -30,8 +30,28 @@ const jobOf = async (owner: Role | 'other'): Promise<Probe> => ({
   path: `/api/v1/jobs/${await aJob(test.database, profileOf.get(owner) ?? null)}`,
 });
 
-// Every authenticated route the composition root serves, and who may call it.
+const CAMPAIGN = '0x00000000000000000000000000000000000000c1';
+
+// Every route the composition root serves under /api/v1, and who may call it.
 const MATRIX: AccessMatrix = {
+  'GET /campaigns': {
+    public: true,
+    allowed: ROLES,
+    probe: { method: 'get', path: '/api/v1/campaigns' },
+    ok: 200,
+  },
+  'GET /campaigns/:address': {
+    public: true,
+    allowed: ROLES,
+    probe: { method: 'get', path: `/api/v1/campaigns/${CAMPAIGN}` },
+    ok: 200,
+  },
+  'GET /species': {
+    public: true,
+    allowed: ROLES,
+    probe: { method: 'get', path: '/api/v1/species' },
+    ok: 200,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
@@ -40,6 +60,8 @@ const MATRIX: AccessMatrix = {
   },
   'GET /jobs/:id': { allowed: ROLES, probe: jobOf, ok: 200, foreign: () => jobOf('other') },
 };
+
+const sendAnonymous = ({ method, path, body }: Probe) => request(api.app)[method](path).send(body);
 
 const send = async (role: Role, { method, path, body }: Probe) =>
   request(api.app)
@@ -57,6 +79,7 @@ beforeAll(async () => {
   }
 
   profileOf.set('other', await aProfile(test.database, 'planter', OTHER_USER));
+  await aCampaign(test.database, { address: CAMPAIGN });
 }, CONTAINER_START_MS);
 
 afterAll(async () => {
@@ -64,8 +87,8 @@ afterAll(async () => {
 });
 
 // A new route fails here until it has a row in the matrix.
-it('the matrix covers every authenticated route, and nothing that is not one', () => {
+it('the matrix covers every route, and nothing that is not one', () => {
   expect(Object.keys(MATRIX).sort()).toEqual(routesOf(api.routers).sort());
 });
 
-describeAccessMatrix(MATRIX, send);
+describeAccessMatrix(MATRIX, send, sendAnonymous);

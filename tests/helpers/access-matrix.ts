@@ -13,6 +13,8 @@ export type Probe = {
 };
 
 type MatrixEntry = {
+  /** Anyone may call it: without a token it answers `ok` too. Otherwise no token is 401 missing_token. */
+  public?: true;
   /** Roles the route's gate lets through; every other role answers 403 forbidden_role. */
   allowed: readonly Role[];
   /** The request each role sends (built per role when the record must be the caller's own), and the status an allowed
@@ -30,6 +32,9 @@ export type AccessMatrix = Record<string, MatrixEntry>;
 /** Sends a probe as a signed-in user holding the role. */
 export type SendAs = (role: Role, probe: Probe) => Promise<Response>;
 
+/** Sends a probe with no token. */
+export type SendAnonymous = (probe: Probe) => Promise<Response>;
+
 /** "METHOD /path" for every route the routers declare (a route's handlers each repeat its method). */
 export const routesOf = (routers: Router[]): string[] => [
   ...new Set(
@@ -41,8 +46,13 @@ export const routesOf = (routers: Router[]): string[] => [
   ),
 ];
 
-/** docs/BE/testing.md §5 (ADR-008): one test per role per route, and one foreign-record test per owned route. */
-export const describeAccessMatrix = (matrix: AccessMatrix, send: SendAs): void => {
+/** docs/BE/testing.md §5 (ADR-008): one test per role per route, one signed out, and one foreign-record test per
+ *  owned route. */
+export const describeAccessMatrix = (
+  matrix: AccessMatrix,
+  send: SendAs,
+  sendAnonymous: SendAnonymous,
+): void => {
   describe('access matrix (ADR-008, NFR-004)', () => {
     describe.each(Object.entries(matrix))('%s', (_route, entry) => {
       it.each(ROLES)('as %s', async (role) => {
@@ -56,6 +66,19 @@ export const describeAccessMatrix = (matrix: AccessMatrix, send: SendAs): void =
         } else {
           expect(response.status).toBe(403);
           expect(response.body.error.code).toBe('forbidden_role');
+        }
+      });
+
+      it('signed out', async () => {
+        const response = await sendAnonymous(
+          typeof entry.probe === 'function' ? await entry.probe('donor') : entry.probe,
+        );
+
+        if (entry.public === true) {
+          expect(response.status).toBe(entry.ok);
+        } else {
+          expect(response.status).toBe(401);
+          expect(response.body.error.code).toBe('missing_token');
         }
       });
 

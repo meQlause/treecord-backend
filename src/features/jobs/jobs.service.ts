@@ -9,7 +9,7 @@ import {
   scoreJobPayloadSchema,
   setPriceJobPayloadSchema,
 } from '../../generated/frozen/jobs.js';
-import type { DatabaseTransaction } from '../../shared/db/database.js';
+import type { DatabaseClient, DatabaseTransaction } from '../../shared/db/database.js';
 import { DomainError } from '../../shared/errors.js';
 import type { EnqueueOutcome } from './jobs.mapper.js';
 import {
@@ -89,6 +89,19 @@ export const enqueue = async (
   return existing.status === 'failed'
     ? { job: await repository.rearm(existing.id, validPayload), outcome: 'rearmed' }
     : { job: existing, outcome: 'replayed' };
+};
+
+/** jobs §4: slots held by claims (or anchor assignments) the chain has not answered yet. Works on a client or a
+ *  transaction. */
+export const openSlotCounts = async (
+  database: DatabaseClient,
+  kind: 'claim' | 'anchor_assign',
+  campaign: string,
+  planter: string | null,
+): Promise<{ total: number; own: number; ownLatestJobId: string | null }> => {
+  const counts = await jobsRepository(database).openSlotCounts(kind, campaign, planter);
+
+  return { total: counts.total, own: counts.own, ownLatestJobId: counts.own_latest_id };
 };
 
 /** docs/BE/features/jobs.md §2: the creator or an operator reads a job; for anyone else it does not exist. */

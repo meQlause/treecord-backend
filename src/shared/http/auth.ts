@@ -34,3 +34,19 @@ export const authenticate =
     res.locals['profile'] = await resolveProfile(privyUserId);
     next();
   };
+
+/** A public route that adds the caller's own figures when a token is sent (campaigns §2): no Authorization header
+ *  passes through without a profile; a header that fails is 401 as on a private route. */
+export const authenticateIfPresent = (options: AuthOptions): RequestHandler => {
+  const required = authenticate(options);
+
+  return async (req, res, next) => {
+    if (req.get('authorization') === undefined) {
+      next();
+
+      return;
+    }
+
+    await required(req, res, next);
+  };
+};

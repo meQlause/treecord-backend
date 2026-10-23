@@ -1,5 +1,5 @@
 import { sql, type Insertable } from 'kysely';
-import type { RelayerJobs, UserRole } from '../../src/generated/db.js';
+import type { Campaigns, RelayerJobs, UserRole } from '../../src/generated/db.js';
 import type { DatabaseClient } from '../../src/shared/db/database.js';
 
 // Builders for the rows the chain mirror and the API own, written through real SQL. Values follow the mockup's demo
@@ -46,17 +46,20 @@ export const aPlantedTree = async (database: DatabaseClient): Promise<void> => {
   );
 };
 
-/** A profile whose Privy user (the token subject) signs in as `role`; a planter has accepted the agreement. */
+/** A profile whose Privy user (the token subject) signs in as `role`, with an embedded wallet when given; a planter
+ *  has accepted the agreement. */
 export const aProfile = async (
   database: DatabaseClient,
   role: UserRole,
   privyUserId: string,
+  walletAddress: string | null = null,
 ): Promise<string> =>
   (
     await database
       .insertInto('profiles')
       .values({
         privy_user_id: privyUserId,
+        wallet_address: walletAddress,
         role,
         carbon_rights_agreement_hash: role === 'planter' ? AGREEMENT_HASH : null,
       })
@@ -82,3 +85,62 @@ export const aJob = async (
       .returning('id')
       .executeTakeFirstOrThrow()
   ).id;
+
+/** The five seeded species (data-spec §10), as S03 and S14 list them. */
+export const theSpecies = async (database: DatabaseClient): Promise<void> => {
+  await database
+    .insertInto('species')
+    .values(
+      [
+        ['PERSEA_AMERICANA', 'Persea americana', 'Alpukat', 'Avocado'],
+        ['DURIO_ZIBETHINUS', 'Durio zibethinus', 'Durian', 'Durian'],
+        ['SWIETENIA_MACROPHYLLA', 'Swietenia macrophylla', 'Mahoni', 'Mahogany'],
+        ['RHIZOPHORA_MUCRONATA', 'Rhizophora mucronata', 'Bakau', 'Rhizophora mangrove'],
+        ['FALCATARIA_FALCATA', 'Falcataria falcata', 'Sengon', 'Sengon'],
+      ].map(([code = '', scientific = '', local = '', english = '']) => ({
+        code,
+        scientific_name: scientific,
+        local_name: local,
+        english_name: english,
+        est_kg_co2_per_year_mature: '22.00',
+        years_to_maturity: 10,
+      })),
+    )
+    .execute();
+};
+
+/** A Funding campaign of 1,000 trees and 10,000 USDC with the default split, unless `values` says otherwise. */
+export const aCampaign = async (
+  database: DatabaseClient,
+  values: Partial<Insertable<Campaigns>> & Pick<Insertable<Campaigns>, 'address'>,
+): Promise<void> => {
+  await database
+    .insertInto('campaigns')
+    .values({
+      chain_id: 31337,
+      creator_address: PLANTER_WALLET,
+      region_radius_m: 2500,
+      region_geohash: 'qqguw7p',
+      tree_target: 1000,
+      anchor_slots: 250,
+      open_slots: 750,
+      per_planter_cap: 50,
+      funding_target: '10000000000',
+      funding_deadline: new Date('2026-11-10T00:00:00.000Z'),
+      claim_deadline: new Date('2026-12-10T00:00:00.000Z'),
+      commitment_units: 36,
+      time_unit_seconds: '2592000',
+      split: {
+        incentivesBps: 7000,
+        seedlingsBps: 1000,
+        verificationBps: 500,
+        reserveBps: 1000,
+        feeBps: 500,
+      },
+      metadata_uri: 'ipfs://treecord-demo',
+      created_block: '1',
+      created_tx: CREATED_TX,
+      ...values,
+    })
+    .execute();
+};

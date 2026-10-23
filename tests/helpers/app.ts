@@ -18,6 +18,7 @@ export const testApp = (overrides: Partial<AppDependencies> = {}): Express =>
         throw new Error('not reached: every token is refused');
       },
     },
+    publicRouters: [],
     privateRouters: [],
     ...overrides,
   });
