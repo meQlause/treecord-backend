@@ -27,10 +27,28 @@ const BY_CONSTRAINT: Readonly<Record<string, Mapped>> = {
   public_p256_key_only: invalid('publicKey', 'Must be a public P-256 key'), // 23514, NFR-001
 };
 
+// Triggers raise check_violation (23514) with the code as their message (data-spec §6.2, the frozen device limit).
+const CHECK_VIOLATION = '23514';
+const BY_TRIGGER_MESSAGE: Readonly<Record<string, Mapped>> = {
+  session_closed: { code: 'session_closed' }, // FR-197, FR-198, FR-200
+  device_limit_reached: { code: 'device_limit_reached' }, // FR-120
+};
+
+type PostgresError = { code?: unknown; constraint?: unknown; message?: unknown } | null;
+
+const lookup = (error: PostgresError): Mapped | undefined => {
+  if (typeof error?.constraint === 'string') {
+    return BY_CONSTRAINT[error.constraint];
+  }
+
+  return error?.code === CHECK_VIOLATION && typeof error.message === 'string'
+    ? BY_TRIGGER_MESSAGE[error.message]
+    : undefined;
+};
+
 /** The domain error a PostgreSQL violation stands for, or undefined when it is not one the API expects. */
 export const toDomainError = (error: unknown): DomainError | undefined => {
-  const constraint = (error as { constraint?: unknown } | null)?.constraint;
-  const mapped = typeof constraint === 'string' ? BY_CONSTRAINT[constraint] : undefined;
+  const mapped = lookup(error as PostgresError);
 
   return mapped === undefined ? undefined : new DomainError(mapped.code, mapped.details);
 };
