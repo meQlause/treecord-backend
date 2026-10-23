@@ -32,6 +32,8 @@ const configSchema = z.object({
   S3_ACCESS_KEY: z.string().min(1),
   S3_SECRET_KEY: z.string().min(1),
   WEB_ORIGIN: httpUrl,
+  // campaigns §4: the start of every metadataURI, never the request's Host
+  PUBLIC_API_URL: httpUrl,
   // ADR-007: wallet-signature sign-in exists only for the demo scripts and is off by default
   DEMO_WALLET_AUTH: z
     .enum(['true', 'false'])

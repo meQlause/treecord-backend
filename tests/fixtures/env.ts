@@ -14,4 +14,5 @@ export const VALID_ENV = {
   S3_ACCESS_KEY: 'treecord',
   S3_SECRET_KEY: 'treecord-secret',
   WEB_ORIGIN: 'http://127.0.0.1:5173',
+  PUBLIC_API_URL: 'http://localhost:3001',
 };

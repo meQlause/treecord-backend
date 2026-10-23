@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   budget,
+  claimRefusal,
   daysLeft,
   decodeCampaignCursor,
   encodeCampaignCursor,
@@ -140,6 +141,52 @@ describe('the list cursor', () => {
   ])('refuses %s with invalid_cursor', (_case, cursor) => {
     expect(() => decodeCampaignCursor(cursor)).toThrow(
       expect.objectContaining({ code: 'invalid_cursor' }),
+    );
+  });
+});
+
+describe('claimRefusal (§6): the first that applies', () => {
+  const CLAIM = {
+    count: 2,
+    status: 'active',
+    claimDeadline: new Date('2026-12-10T00:00:00Z'),
+    chainNow: new Date('2026-10-23T03:12:44Z'),
+    slots: { open: 750, taken: 1, queued: 0, cap: 50, held: 1, ownQueued: 0 },
+  };
+
+  it('an Active campaign inside its window with slots and cap left: no refusal', () => {
+    expect(claimRefusal(CLAIM)).toBeNull();
+    expect(claimRefusal({ ...CLAIM, chainNow: CLAIM.claimDeadline })).toBeNull();
+  });
+
+  it.each([
+    [
+      'a campaign still funding',
+      { status: 'funding' },
+      { code: 'campaign_not_active', details: { status: 'funding' } },
+    ],
+    [
+      'past the claim deadline',
+      { chainNow: new Date('2026-12-10T00:00:01Z') },
+      { code: 'claim_window_closed', details: { claimDeadline: '2026-12-10T00:00:00.000Z' } },
+    ],
+    [
+      'more than the open slots left',
+      { count: 5, slots: { ...CLAIM.slots, open: 6, taken: 1, queued: 1 } },
+      { code: 'not_enough_slots', details: { available: 4 } },
+    ],
+    [
+      'more than the cap left',
+      { count: 4, slots: { ...CLAIM.slots, cap: 50, held: 46, ownQueued: 1 } },
+      { code: 'planter_cap_exceeded', details: { remaining: 3, cap: 50 } },
+    ],
+  ])('%s', (_case, change, refusal) => {
+    expect(claimRefusal({ ...CLAIM, ...change })).toEqual(refusal);
+  });
+
+  it('a campaign that is not Active is refused first, whatever else is wrong', () => {
+    expect(claimRefusal({ ...CLAIM, status: 'completed', count: 999 })?.code).toBe(
+      'campaign_not_active',
     );
   });
 });

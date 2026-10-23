@@ -28,6 +28,7 @@ const BY_CONSTRAINT: Readonly<Record<string, Mapped>> = {
   // the same owner re-sending a still-queued video gets the existing submission; that is the evidence service's job
   submissions_video_sha256_key: precheck('duplicate_video'), // 23505, FR-132
   devices_thumbprint_key: { code: 'device_already_registered' }, // 23505, FR-120
+  campaign_metadata_species_code_fkey: invalid('speciesCode', 'Select an available species.'), // 23503, FR-077
   profiles_wallet_address_key: { code: 'wallet_already_linked' }, // 23505, FR-003
   planters_accept_carbon_agreement: { code: 'agreement_required' }, // 23514, FR-021
   devices_label_required: invalid('label', 'Required'), // 23514, FR-120

@@ -9,9 +9,11 @@ export type CampaignsCradle = { campaignsService: ReturnType<typeof createCampai
 /** be-architecture §6: this feature's registrations. Stateless, so one instance serves every request. */
 export const registerCampaigns = (container: AwilixContainer<Cradle>): void => {
   container.register({
-    campaignsService: asFunction(({ database, chainNow, clock }: Cradle) =>
+    campaignsService: asFunction(({ database, config, chainNow, clock }: Cradle) =>
       createCampaignsService({
         repository: campaignsRepository(database),
+        database,
+        publicApiUrl: config.PUBLIC_API_URL,
         queuedClaims: (campaign, planter) => openSlotCounts(database, 'claim', campaign, planter),
         chainNow,
         now: clock,

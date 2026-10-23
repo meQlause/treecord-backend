@@ -9,7 +9,7 @@ import {
   registerCampaigns,
   type CampaignsCradle,
 } from './features/campaigns/campaigns.container.js';
-import { campaignsRouter } from './features/campaigns/index.js';
+import { campaignsPrivateRouter, campaignsRouter } from './features/campaigns/index.js';
 import { registerCarbon, type CarbonCradle } from './features/carbon/carbon.container.js';
 import { carbonHoldingsRouter, carbonPublicRouter } from './features/carbon/index.js';
 import { registerDevices, type DevicesCradle } from './features/devices/devices.container.js';
@@ -154,6 +154,7 @@ export const privateRouters = ({
   devicesService,
   planterService,
   evidenceService,
+  campaignsService,
 }: Cradle): Router[] => [
   accountsRouter(accountsService),
   jobsRouter(jobsService),
@@ -162,4 +163,5 @@ export const privateRouters = ({
   devicesRouter(devicesService),
   planterRouter(planterService),
   evidenceRouter(evidenceService),
+  campaignsPrivateRouter(campaignsService),
 ];

@@ -109,3 +109,57 @@ export const decodeCampaignCursor = (cursor: string): CursorPosition => {
 
   return { block: b, address: a };
 };
+
+export type ClaimRefusal =
+  | { code: 'campaign_not_active'; details: { status: string } }
+  | { code: 'claim_window_closed'; details: { claimDeadline: string } }
+  | { code: 'not_enough_slots'; details: { available: number } }
+  | { code: 'planter_cap_exceeded'; details: { remaining: number; cap: number } };
+
+/** §6: the first refusal that applies, in the contract's order: Active, inside the claim window (chain time), enough
+ *  open slots, within the planter's cap; null when the claim may be queued. */
+export const claimRefusal = ({
+  count,
+  status,
+  claimDeadline,
+  chainNow,
+  slots,
+}: {
+  count: number;
+  status: string;
+  claimDeadline: Date;
+  chainNow: Date;
+  slots: {
+    open: number;
+    taken: number;
+    queued: number;
+    cap: number;
+    held: number;
+    ownQueued: number;
+  };
+}): ClaimRefusal | null => {
+  if (status !== 'active') {
+    return { code: 'campaign_not_active', details: { status } };
+  }
+
+  if (chainNow > claimDeadline) {
+    return { code: 'claim_window_closed', details: { claimDeadline: claimDeadline.toISOString() } };
+  }
+
+  const available = openAvailable({
+    openSlots: slots.open,
+    taken: slots.taken,
+    queued: slots.queued,
+    claimDeadlinePassed: false,
+  });
+
+  if (count > available) {
+    return { code: 'not_enough_slots', details: { available } };
+  }
+
+  const remaining = remainingCap({ cap: slots.cap, held: slots.held, queued: slots.ownQueued });
+
+  return count > remaining
+    ? { code: 'planter_cap_exceeded', details: { remaining, cap: slots.cap } }
+    : null;
+};

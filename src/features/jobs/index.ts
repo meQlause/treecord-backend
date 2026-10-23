@@ -4,3 +4,5 @@ export { jobsRouter } from './jobs.routes.js';
 export { enqueuedResponse } from './jobs.mapper.js';
 
 export { enqueue, jobByKey, openSlotCounts } from './jobs.service.js';
+
+export { parseIdempotencyKey } from './jobs.rules.js';

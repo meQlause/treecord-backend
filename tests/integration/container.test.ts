@@ -18,7 +18,14 @@ import {
   type TestDatabase,
 } from '../helpers/database.js';
 import { fakePrivy } from '../helpers/fake-privy.js';
-import { aCampaign, aJob, aPlantedTree, aProfile, TREE_ID } from '../fixtures/mirror.js';
+import {
+  aCampaign,
+  aJob,
+  aPlantedTree,
+  aProfile,
+  theSpecies,
+  TREE_ID,
+} from '../fixtures/mirror.js';
 
 const userOf = (role: Role): string => `did:privy:cm2matrix${role}000000000`;
 const OTHER_USER = 'did:privy:cm2matrixother0000000000';
@@ -105,6 +112,7 @@ const CAMPAIGN = '0x00000000000000000000000000000000000000c1';
 // an Active campaign where the matrix planter (wallet 0x2222…) holds slot 1 with its tag
 const PLANTING_CAMPAIGN = '0x00000000000000000000000000000000000000c2';
 const PLANTER_WALLET = `0x${'2'.repeat(40)}`;
+const METADATA_ID = '7d5c9b8e-1f4a-4c2e-9a3b-6f0e2d1c4b5a';
 let announced = 0;
 const ISSUED_TX = `0x${'1'.repeat(64)}`;
 
@@ -261,6 +269,36 @@ const MATRIX: AccessMatrix = {
     ok: 200,
     foreign: () => submissionReadOf('other'),
   },
+  'POST /campaigns/metadata': {
+    allowed: ['donor', 'operator'],
+    probe: {
+      method: 'post',
+      path: '/api/v1/campaigns/metadata',
+      body: {
+        title: 'Matrix campaign',
+        speciesCode: 'PERSEA_AMERICANA',
+        regionName: 'Matrix',
+        regionCenter: { lat: 0, lon: 0 },
+        regionRadiusM: 100,
+      },
+    },
+    ok: 201,
+  },
+  'GET /campaigns/metadata/:id': {
+    public: true,
+    allowed: ROLES,
+    probe: { method: 'get', path: `/api/v1/campaigns/metadata/${METADATA_ID}` },
+    ok: 200,
+  },
+  'POST /campaigns/:address/claims': {
+    allowed: ['planter'],
+    probe: {
+      method: 'post',
+      path: `/api/v1/campaigns/${PLANTING_CAMPAIGN}/claims`,
+      body: { count: 1 },
+    },
+    ok: 202,
+  },
   'GET /me': { allowed: ROLES, probe: { method: 'get', path: '/api/v1/me' }, ok: 200 },
   'POST /profile': {
     allowed: ROLES,
@@ -299,6 +337,12 @@ beforeAll(async () => {
   await aCampaign(test.database, { address: CAMPAIGN });
   await aPlantedTree(test.database);
   await aCampaign(test.database, { address: PLANTING_CAMPAIGN, status: 'active' });
+  await theSpecies(test.database);
+  await sql`insert into public.campaign_metadata (id, creator_profile_id, title, species_code, region_name,
+      region_center_lat, region_center_lon, region_radius_m)
+    values (${METADATA_ID}, ${profileOf.get('donor')}, 'Matrix', 'PERSEA_AMERICANA', 'Matrix', 0, 0, 100)`.execute(
+    test.database,
+  );
   await sql`insert into public.slots (campaign_address, slot_id, kind, status, planter_address)
     values (${PLANTING_CAMPAIGN}, 1, 'open', 'claimed', ${PLANTER_WALLET})`.execute(test.database);
   await sql`insert into public.slot_tags (campaign_address, slot_id, code)

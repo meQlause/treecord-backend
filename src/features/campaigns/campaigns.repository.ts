@@ -1,5 +1,5 @@
-import { sql, type ExpressionBuilder, type Kysely } from 'kysely';
-import type { DB } from '../../generated/db.js';
+import { sql, type ExpressionBuilder, type Insertable, type Kysely } from 'kysely';
+import type { CampaignMetadata, DB } from '../../generated/db.js';
 import type { CursorPosition } from './campaigns.rules.js';
 import type { ListCampaignsQuery } from './campaigns.schema.js';
 
@@ -142,9 +142,43 @@ const pageReads = (database: Kysely<DB>) => ({
       .executeTakeFirstOrThrow(),
 });
 
+/** campaigns §4–§5: the metadata a creator saves before the factory call. */
+const metadataReads = (database: Kysely<DB>) => ({
+  insertMetadata: async (values: Insertable<CampaignMetadata>): Promise<string> =>
+    (
+      await database
+        .insertInto('campaign_metadata')
+        .values(values)
+        .returning('id')
+        .executeTakeFirstOrThrow()
+    ).id,
+
+  /** Never selects the creator: profile ids stay out of public responses (data-spec §7). */
+  metadata: (id: string) =>
+    database
+      .selectFrom('campaign_metadata as m')
+      .innerJoin('species as s', 's.code', 'm.species_code')
+      .select([
+        'm.id',
+        'm.title',
+        'm.description',
+        'm.species_code',
+        's.english_name as species_name',
+        'm.region_name',
+        'm.region_center_lat',
+        'm.region_center_lon',
+        'm.region_radius_m',
+        'm.image_urls',
+        'm.created_at',
+      ])
+      .where('m.id', '=', id)
+      .executeTakeFirst(),
+});
+
 export const campaignsRepository = (database: Kysely<DB>) => ({
   ...catalogReads(database),
   ...pageReads(database),
+  ...metadataReads(database),
 });
 
 export type CampaignsRepository = ReturnType<typeof campaignsRepository>;
