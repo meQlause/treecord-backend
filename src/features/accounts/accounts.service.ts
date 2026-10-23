@@ -1,4 +1,11 @@
+import { keccak256, stringToHex } from 'viem';
+import { CARBON_RIGHTS_AGREEMENT_VERSION } from '../../generated/frozen/constants.js';
+import { DomainError } from '../../shared/errors.js';
 import type { AccountsRepository, ProfileRow } from './accounts.repository.js';
+import type { UpdateProfileInput } from './accounts.schema.js';
+
+// accounts §2: the hash stored on acceptance names the agreement version the planter accepted.
+const AGREEMENT_HASH = keccak256(stringToHex(CARBON_RIGHTS_AGREEMENT_VERSION));
 
 /** The embedded wallet Privy reports for a user, or null when it has none yet or the lookup failed. */
 type WalletLookup = (privyUserId: string) => Promise<string | null>;
@@ -45,6 +52,17 @@ export const createAccountsService = ({ repository, walletOf }: AccountsDependen
       await repository.setWalletIfMissing(existing.id, wallet);
 
       return mustLoad(privyUserId);
+    },
+
+    /** accounts §2: no row back means the role guard refused it, i.e. an auditor or operator sent `role`. */
+    updateProfile: async (id: string, input: UpdateProfileInput): Promise<ProfileRow> => {
+      const updated = await repository.updateProfile(id, input, AGREEMENT_HASH);
+
+      if (updated === undefined) {
+        throw new DomainError('role_locked');
+      }
+
+      return updated;
     },
   };
 };

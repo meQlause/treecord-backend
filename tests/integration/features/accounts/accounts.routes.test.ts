@@ -33,7 +33,7 @@ const app = () => {
       demoWalletAuth: false,
       resolveProfile: accounts.resolveProfile,
     },
-    privateRouters: [accountsRouter()],
+    privateRouters: [accountsRouter(accounts)],
   });
 };
 
@@ -51,17 +51,18 @@ const status = async (expected: number, pending: ReturnType<typeof getMe>) => {
   return response;
 };
 
+// One database for the whole file: both describes below use it.
+beforeAll(async () => {
+  test = await startMigratedDatabase();
+  privy = await fakePrivy();
+}, CONTAINER_START_MS);
+
+afterAll(async () => {
+  await test.stop();
+});
+
 // docs/BE/features/accounts.md §0 (profile resolution) and §1 (GET /api/v1/me), FR-001–FR-005.
 describe('GET /api/v1/me', () => {
-  beforeAll(async () => {
-    test = await startMigratedDatabase();
-    privy = await fakePrivy();
-  }, CONTAINER_START_MS);
-
-  afterAll(async () => {
-    await test.stop();
-  });
-
   beforeEach(async () => {
     wallets = new Map();
     await sql`delete from public.profiles`.execute(test.database);
@@ -125,5 +126,124 @@ describe('GET /api/v1/me', () => {
 
     expect(response.body.error.code).toBe('wallet_already_linked');
     expect(rows[0]?.count).toBe('0');
+  });
+});
+
+const postProfile = async (body: unknown, userId = SARI) =>
+  request(app())
+    .post('/api/v1/profile')
+    .set('Authorization', `Bearer ${await privy.token({ userId })}`)
+    .send(body as object);
+
+const setRole = (role: string, userId = SARI) =>
+  sql`update public.profiles set role = ${role}::public.user_role where privy_user_id = ${userId}`.execute(
+    test.database,
+  );
+
+// Sari signed in once: a donor with her wallet.
+const freshSari = async () => {
+  wallets = new Map([[SARI, SARI_WALLET]]);
+  await sql`delete from public.profiles`.execute(test.database);
+  await status(200, getMe());
+};
+
+// docs/BE/features/accounts.md §2, FR-018–FR-021.
+describe('POST /api/v1/profile', () => {
+  beforeEach(freshSari);
+
+  it('saves a trimmed display name and answers the profile', async () => {
+    const response = await status(200, postProfile({ displayName: '  Alex Tan  ' }));
+
+    expect(response.body.profile).toMatchObject({
+      displayName: 'Alex Tan',
+      role: 'donor',
+      walletAddress: SARI_WALLET,
+    });
+  });
+
+  it('a donor becomes a planter with the agreement (D01), and repeating it never moves the acceptance time', async () => {
+    const first = await status(
+      200,
+      postProfile({ role: 'planter', carbonRightsAgreementAccepted: true }),
+    );
+
+    expect(first.body.profile).toMatchObject({
+      role: 'planter',
+      carbonRightsAgreementAccepted: true,
+    });
+
+    const again = await status(
+      200,
+      postProfile({ role: 'planter', carbonRightsAgreementAccepted: true }),
+    );
+
+    expect(again.body.profile.carbonRightsAcceptedAt).toBe(
+      first.body.profile.carbonRightsAcceptedAt,
+    );
+  });
+
+  it('a donor asking for planter without any acceptance gets 400 agreement_required, role unchanged', async () => {
+    const response = await status(400, postProfile({ role: 'planter' }));
+
+    expect(response.body.error.code).toBe('agreement_required');
+    expect((await status(200, getMe())).body.profile.role).toBe('donor');
+  });
+
+  it('switches back to donor, and returns to planter later on the earlier acceptance', async () => {
+    await status(200, postProfile({ role: 'planter', carbonRightsAgreementAccepted: true }));
+
+    expect((await status(200, postProfile({ role: 'donor' }))).body.profile.role).toBe('donor');
+    expect((await status(200, postProfile({ role: 'planter' }))).body.profile.role).toBe('planter');
+  });
+
+  it.each(['auditor', 'operator'])(
+    'an %s sending role gets 403 role_locked, and can still save a name',
+    async (role) => {
+      await setRole(role);
+
+      expect((await status(403, postProfile({ role: 'donor' }))).body.error.code).toBe(
+        'role_locked',
+      );
+      expect((await status(200, postProfile({ displayName: 'Dewi' }))).body.profile.role).toBe(
+        role,
+      );
+    },
+  );
+});
+
+describe('POST /api/v1/profile refuses a malformed body or a taken wallet', () => {
+  beforeEach(freshSari);
+
+  it.each([
+    ['an empty body', {}, ''],
+    ['a server-owned field', { walletAddress: SARI_WALLET }, ''],
+    ['an unknown field', { nickname: 'Sari' }, ''],
+    ['a role other than donor or planter', { role: 'operator' }, 'role'],
+    [
+      'an agreement sent as false',
+      { carbonRightsAgreementAccepted: false },
+      'carbonRightsAgreementAccepted',
+    ],
+    ['a display name blank after trimming', { displayName: '   ' }, 'displayName'],
+    ['a display name over 80 characters', { displayName: 'x'.repeat(81) }, 'displayName'],
+  ])('%s answers 400 validation_error', async (_name, body, path) => {
+    const response = await status(400, postProfile(body));
+
+    expect(response.body.error.code).toBe('validation_error');
+    expect(response.body.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path })]),
+    );
+  });
+
+  it('a caller whose wallet belongs to another profile gets 409 wallet_already_linked here too', async () => {
+    wallets.set('did:privy:cm2alex0000000000000000', SARI_WALLET);
+    await sql`update public.profiles set wallet_address = null where privy_user_id = ${SARI}`.execute(
+      test.database,
+    );
+    await status(200, getMe('did:privy:cm2alex0000000000000000'));
+
+    expect((await status(409, postProfile({ displayName: 'Sari' }))).body.error.code).toBe(
+      'wallet_already_linked',
+    );
   });
 });

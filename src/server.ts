@@ -19,7 +19,7 @@ const server = createApp({
     demoWalletAuth: config.DEMO_WALLET_AUTH,
     resolveProfile: accountsService.resolveProfile,
   },
-  privateRouters: [accountsRouter()],
+  privateRouters: [accountsRouter(accountsService)],
 }).listen(config.PORT);
 
 const stop = (signal: NodeJS.Signals): void => {
