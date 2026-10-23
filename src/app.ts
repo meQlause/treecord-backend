@@ -1,4 +1,4 @@
-import express, { type Express } from 'express';
+import express, { type Express, type Router } from 'express';
 import type { Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
 import { healthRouter, type ReadinessProbes } from './features/health/health.routes.js';
@@ -11,16 +11,24 @@ export type AppDependencies = {
   logger: Logger;
   jsonBodyLimitKb: number;
   auth: AuthOptions;
+  /** Feature routers that need a signed-in caller, mounted under /api/v1 (be-architecture §5 row 8). */
+  privateRouters: Router[];
 };
 
 /** Builds the Express app; middleware order is docs/BE/be-architecture.md §5. */
-export const createApp = ({ readiness, logger, jsonBodyLimitKb, auth }: AppDependencies): Express =>
+export const createApp = ({
+  readiness,
+  logger,
+  jsonBodyLimitKb,
+  auth,
+  privateRouters,
+}: AppDependencies): Express =>
   express()
     .use(requestId)
     .use(pinoHttp({ logger, genReqId: (_req, res) => String(res.getHeader('x-request-id')) }))
     .use(express.json({ limit: `${jsonBodyLimitKb}kb` }))
     .use(healthRouter(readiness))
-    .use('/api/v1', authenticate(auth))
+    .use('/api/v1', authenticate(auth), ...privateRouters)
     .use(notFound)
     .use(
       errorHandler({

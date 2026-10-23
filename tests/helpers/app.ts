@@ -14,6 +14,10 @@ export const testApp = (overrides: Partial<AppDependencies> = {}): Express =>
         throw new DomainError('invalid_token');
       },
       demoWalletAuth: false,
+      resolveProfile: async () => {
+        throw new Error('not reached: every token is refused');
+      },
     },
+    privateRouters: [],
     ...overrides,
   });

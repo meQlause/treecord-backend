@@ -42,3 +42,61 @@ export const privyJwks = (appId: string): KeyResolver => {
 
   return (token) => jwks(decodeProtectedHeader(token));
 };
+
+type PrivyUser = {
+  linked_accounts?: Array<{
+    type?: string;
+    wallet_client_type?: string;
+    chain_type?: string;
+    address?: string;
+  }>;
+};
+
+/**
+ * The user's Privy embedded Ethereum wallet (accounts §0 steps 4–5), or null when Privy has none yet or the lookup
+ * fails or times out: not an error, the next request asks again (ADR-010, FR-003 #4).
+ */
+export const privyEmbeddedWallet =
+  ({
+    appId,
+    appSecret,
+    timeoutMs,
+    fetchImpl = fetch,
+  }: {
+    appId: string;
+    appSecret: string;
+    timeoutMs: number;
+    fetchImpl?: typeof fetch;
+  }) =>
+  async (privyUserId: string): Promise<string | null> => {
+    const credentials = Buffer.from(`${appId}:${appSecret}`).toString('base64');
+
+    try {
+      const response = await fetchImpl(
+        `https://auth.privy.io/api/v1/users/${encodeURIComponent(privyUserId)}`,
+        {
+          headers: {
+            authorization: `Basic ${credentials}`,
+            'privy-app-id': appId,
+          },
+          signal: AbortSignal.timeout(timeoutMs),
+        },
+      );
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const user = (await response.json()) as PrivyUser;
+      const wallet = user.linked_accounts?.find(
+        (account) =>
+          account.type === 'wallet' &&
+          account.wallet_client_type === 'privy' &&
+          account.chain_type === 'ethereum',
+      );
+
+      return wallet?.address ?? null;
+    } catch {
+      return null;
+    }
+  };

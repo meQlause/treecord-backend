@@ -6,6 +6,8 @@ export type AuthOptions = {
   verify: TokenVerifier;
   /** ADR-007: wallet-signature tokens for the demo scripts, off unless DEMO_WALLET_AUTH=true. */
   demoWalletAuth: boolean;
+  /** accounts §0 steps 3–6: the caller's profile, created on the first sign-in. */
+  resolveProfile: (privyUserId: string) => Promise<unknown>;
 };
 
 const BEARER = /^Bearer (\S+)$/;
@@ -13,7 +15,7 @@ const DEMO_TOKEN_PREFIX = 'wallet.';
 
 /** be-architecture §5 row 7: every private route runs behind this (accounts §0 steps 1–2). */
 export const authenticate =
-  ({ verify }: AuthOptions): RequestHandler =>
+  ({ verify, resolveProfile }: AuthOptions): RequestHandler =>
   async (req, res, next) => {
     const token = BEARER.exec(req.get('authorization') ?? '')?.[1];
 
@@ -27,6 +29,8 @@ export const authenticate =
       throw new DomainError('invalid_token');
     }
 
-    res.locals['privyUserId'] = (await verify(token)).privyUserId;
+    const { privyUserId } = await verify(token);
+
+    res.locals['profile'] = await resolveProfile(privyUserId);
     next();
   };

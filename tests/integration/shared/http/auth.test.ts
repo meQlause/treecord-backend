@@ -6,7 +6,11 @@ import { fakePrivy, TEST_APP_ID, type FakePrivy } from '../../../helpers/fake-pr
 
 const appWith = (resolveKey: FakePrivy['resolveKey']) =>
   testApp({
-    auth: { verify: privyVerifier({ appId: TEST_APP_ID, resolveKey }), demoWalletAuth: false },
+    auth: {
+      verify: privyVerifier({ appId: TEST_APP_ID, resolveKey }),
+      demoWalletAuth: false,
+      resolveProfile: async (privyUserId) => ({ privyUserId }),
+    },
   });
 
 // docs/BE/features/accounts.md §0 steps 1–2, ADR-007.

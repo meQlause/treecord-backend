@@ -47,7 +47,8 @@ const PURITY = {
     'A *.rules.ts file must stay pure — no I/O, no framework. Move this to the sibling *.service.ts.',
 };
 const CROSS_FEATURE = {
-  group: ['../*/*', '!../*/index.js'],
+  // a sibling feature's internals; paths that climb out of src/features (../../shared, ../../generated) are fine
+  group: ['../*/*', '!../*/index.js', '!../../**'],
   message: 'A feature reaches another only through its index.ts (docs/BE/be-architecture.md §4).',
 };
 const DB_ONLY = {
