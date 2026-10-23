@@ -1,4 +1,5 @@
-import { sql } from 'kysely';
+import { sql, type Insertable } from 'kysely';
+import type { RelayerJobs, UserRole } from '../../src/generated/db.js';
 import type { DatabaseClient } from '../../src/shared/db/database.js';
 
 // Builders for the rows the chain mirror and the API own, written through real SQL. Values follow the mockup's demo
@@ -44,3 +45,40 @@ export const aPlantedTree = async (database: DatabaseClient): Promise<void> => {
     database,
   );
 };
+
+/** A profile whose Privy user (the token subject) signs in as `role`; a planter has accepted the agreement. */
+export const aProfile = async (
+  database: DatabaseClient,
+  role: UserRole,
+  privyUserId: string,
+): Promise<string> =>
+  (
+    await database
+      .insertInto('profiles')
+      .values({
+        privy_user_id: privyUserId,
+        role,
+        carbon_rights_agreement_hash: role === 'planter' ? AGREEMENT_HASH : null,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow()
+  ).id;
+
+/** A pending claim of two slots on CAMPAIGN, created by `createdBy`, unless `values` says otherwise. */
+export const aJob = async (
+  database: DatabaseClient,
+  createdBy: string | null,
+  values: Partial<Insertable<RelayerJobs>> = {},
+): Promise<string> =>
+  (
+    await database
+      .insertInto('relayer_jobs')
+      .values({
+        kind: 'claim',
+        payload: { campaign: CAMPAIGN, planter: PLANTER_WALLET, count: 2 },
+        created_by_profile_id: createdBy,
+        ...values,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow()
+  ).id;

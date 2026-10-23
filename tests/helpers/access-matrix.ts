@@ -15,8 +15,9 @@ export type Probe = {
 type MatrixEntry = {
   /** Roles the route's gate lets through; every other role answers 403 forbidden_role. */
   allowed: readonly Role[];
-  /** The request each role sends, and the status an allowed role gets. */
-  probe: Probe;
+  /** The request each role sends (built per role when the record must be the caller's own), and the status an allowed
+   *  role gets. */
+  probe: Probe | ((role: Role) => Promise<Probe>);
   ok: number;
   /** For a route that reads or writes an owned record: builds one owned by someone else and returns the request for
    *  it. The caller (the first allowed role) gets 404 not_found, never 403 (ADR-008, NFR-004). */
@@ -45,7 +46,10 @@ export const describeAccessMatrix = (matrix: AccessMatrix, send: SendAs): void =
   describe('access matrix (ADR-008, NFR-004)', () => {
     describe.each(Object.entries(matrix))('%s', (_route, entry) => {
       it.each(ROLES)('as %s', async (role) => {
-        const response = await send(role, entry.probe);
+        const response = await send(
+          role,
+          typeof entry.probe === 'function' ? await entry.probe(role) : entry.probe,
+        );
 
         if (entry.allowed.includes(role)) {
           expect(response.status).toBe(entry.ok);

@@ -5,6 +5,8 @@ import type { PublicClient } from 'viem';
 import type { Config } from './config.js';
 import { registerAccounts, type AccountsCradle } from './features/accounts/accounts.container.js';
 import { accountsRouter } from './features/accounts/index.js';
+import { registerJobs, type JobsCradle } from './features/jobs/jobs.container.js';
+import { jobsRouter } from './features/jobs/index.js';
 import {
   privyEmbeddedWallet,
   privyJwks,
@@ -26,7 +28,7 @@ type SharedCradle = {
 };
 
 /** Every registration; a misspelt dependency name is a compile error (SR-1). */
-export type Cradle = SharedCradle & AccountsCradle;
+export type Cradle = SharedCradle & AccountsCradle & JobsCradle;
 
 /** The composition root: shared singletons, then each feature's register(). */
 export const createRootContainer = (config: Config): AwilixContainer<Cradle> => {
@@ -62,11 +64,13 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
     ).singleton(),
   });
   registerAccounts(container);
+  registerJobs(container);
 
   return container;
 };
 
 /** Every router mounted behind authentication; the access matrix (tests/integration/container.test.ts) covers each. */
-export const privateRouters = ({ accountsService }: Cradle): Router[] => [
+export const privateRouters = ({ accountsService, jobsService }: Cradle): Router[] => [
   accountsRouter(accountsService),
+  jobsRouter(jobsService),
 ];
