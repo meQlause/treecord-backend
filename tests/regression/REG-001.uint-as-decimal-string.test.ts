@@ -2,6 +2,7 @@ import { sql } from 'kysely';
 import request from 'supertest';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { enqueue } from '../../src/features/jobs/jobs.service.js';
+import { getDeployment } from '../../src/generated/frozen/addresses.js';
 import { testApi, type TestApi } from '../helpers/api.js';
 import {
   CONTAINER_START_MS,
@@ -21,6 +22,9 @@ const WALLET = `0x${'a'.repeat(40)}`;
 const CHAIN_TX = `0x${'1'.repeat(64)}`;
 const EVIDENCE = `0x${'2'.repeat(64)}`;
 const RAKA = 'did:privy:cm2raka0000000000000000';
+const ALEX = 'did:privy:cm2alex0000000000000000';
+const ALEX_WALLET = `0x${'c'.repeat(40)}`;
+const LEDGER = getDeployment(31337).carbonLedger.toLowerCase();
 
 let test: TestDatabase;
 let api: TestApi;
@@ -59,6 +63,26 @@ const seedHugeCampaign = async (database: TestDatabase['database']): Promise<voi
   );
 };
 
+// A donor who gave 2^53 + 1 and holds, reserved and retired amounts past it, with retirement 2^53 + 1.
+const seedHugeHoldings = async (database: TestDatabase['database']): Promise<void> => {
+  await aProfile(database, 'donor', ALEX, ALEX_WALLET);
+  await sql`insert into public.contributions (campaign_address, contributor_address, amount, total_raised_after,
+      block_number, block_time, log_index, tx_hash)
+    values (${CAMPAIGN}, ${ALEX_WALLET}, ${BEYOND_DOUBLE}, ${BEYOND_DOUBLE}, 1, now(), 1, ${CHAIN_TX})`.execute(
+    database,
+  );
+  await sql`insert into public.carbon_balances (batch_id, holder_address, amount, updated_block)
+    values (${BEYOND_DOUBLE}, ${LEDGER}, ${HUGE}, 1), (${BEYOND_DOUBLE}, ${ALEX_WALLET}, ${HUGE}, 1)`.execute(
+    database,
+  );
+  await sql`insert into public.carbon_reservations (campaign_address, holder_address, reserved_amount, allocated_amount)
+    values (${CAMPAIGN}, ${ALEX_WALLET}, ${HUGE}, ${BEYOND_DOUBLE})`.execute(database);
+  await sql`insert into public.retirements (retirement_id, batch_id, amount, holder_address, beneficiary, purpose,
+      retired_at, log_index, tx_hash)
+    values (${BEYOND_DOUBLE}, ${BEYOND_DOUBLE}, ${BEYOND_DOUBLE}, ${ALEX_WALLET}, 'PT Hijau', '', now(), 2,
+      ${CHAIN_TX})`.execute(database);
+};
+
 // Every number in a body, wherever it sits.
 const numbersIn = (value: unknown): number[] => {
   if (typeof value === 'number') {
@@ -72,6 +96,7 @@ beforeAll(async () => {
   test = await startMigratedDatabase();
   api = testApi(test.database, await fakePrivy());
   await seedHugeCampaign(test.database);
+  await seedHugeHoldings(test.database);
 }, CONTAINER_START_MS);
 
 afterAll(async () => {
@@ -103,15 +128,23 @@ it(`${BEYOND_DOUBLE} round-trips through a job payload as the exact decimal stri
 });
 
 it.each([
-  ['the catalog', '/api/v1/campaigns'],
-  ['the campaign page', `/api/v1/campaigns/${CAMPAIGN}`],
-  ['the tree page', `/api/v1/trees/${BEYOND_DOUBLE}`],
-  ['the impact report', `/api/v1/reports/campaign/${CAMPAIGN}`],
-  ['the evidence record', `/api/v1/reports/campaign/${CAMPAIGN}/evidence`],
+  ['the catalog', '/api/v1/campaigns', null],
+  ['the campaign page', `/api/v1/campaigns/${CAMPAIGN}`, ALEX],
+  ['the tree page', `/api/v1/trees/${BEYOND_DOUBLE}`, null],
+  ['the impact report', `/api/v1/reports/campaign/${CAMPAIGN}`, null],
+  ['the evidence record', `/api/v1/reports/campaign/${CAMPAIGN}/evidence`, null],
+  ['the carbon catalogue', '/api/v1/carbon/batches', null],
+  ['a batch', `/api/v1/carbon/batches/${BEYOND_DOUBLE}`, null],
+  ['a certificate', `/api/v1/carbon/retirements/${BEYOND_DOUBLE}`, null],
+  ['the holdings', '/api/v1/carbon/holdings', ALEX],
+  ['the donor dashboard', '/api/v1/donor/dashboard', ALEX],
+  ['the donor cards', '/api/v1/donor/campaigns', ALEX],
 ])(
   '%s carries every amount and id as an exact decimal string, never a JSON number',
-  async (_page, path) => {
-    const response = await request(api.app).get(path);
+  async (_page, path, userId) => {
+    const response = await request(api.app)
+      .get(path)
+      .set(userId === null ? {} : await api.signedIn(userId));
 
     expect(response.status).toBe(200);
     expect(response.text).toContain(`"${BEYOND_DOUBLE}"`);
