@@ -29,6 +29,8 @@ type Clocks = {
   chainNow?: () => Promise<Date>;
   /** The server clock; defaults to CHAIN_NOW too, so only a test that wants them apart sets it. */
   clock?: () => Date;
+  /** A block's timestamp; by default the RPC cannot be reached. */
+  blockTime?: (blockNumber: string) => Promise<Date>;
 };
 
 /** The production composition (src/container.ts) with only the outside world swapped: the test database, the fake
@@ -36,7 +38,13 @@ type Clocks = {
 export const testApi = (
   database: DatabaseClient,
   privy: FakePrivy,
-  { chainNow = async () => CHAIN_NOW, clock = () => CHAIN_NOW }: Clocks = {},
+  {
+    chainNow = async () => CHAIN_NOW,
+    clock = () => CHAIN_NOW,
+    blockTime = async () => {
+      throw new Error('no RPC in this test');
+    },
+  }: Clocks = {},
 ): TestApi => {
   const { cradle } = createRootContainer(loadConfig(VALID_ENV)).register({
     database: asValue(database),
@@ -44,6 +52,7 @@ export const testApi = (
     walletOf: asValue(async () => null),
     chainNow: asValue(chainNow),
     clock: asValue(clock),
+    blockTime: asValue(blockTime),
   });
   const open = publicRouters(cradle);
   const signedIn = privateRouters(cradle);

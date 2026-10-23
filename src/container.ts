@@ -9,6 +9,8 @@ import {
   type CampaignsCradle,
 } from './features/campaigns/campaigns.container.js';
 import { campaignsRouter } from './features/campaigns/index.js';
+import { registerCarbon, type CarbonCradle } from './features/carbon/carbon.container.js';
+import { carbonHoldingsRouter, carbonPublicRouter } from './features/carbon/index.js';
 import { accountsRouter } from './features/accounts/index.js';
 import { registerJobs, type JobsCradle } from './features/jobs/jobs.container.js';
 import { jobsRouter } from './features/jobs/index.js';
@@ -23,7 +25,7 @@ import {
   type TokenVerifier,
 } from './shared/auth/privy.js';
 import { createChainClient } from './shared/chain/client.js';
-import { chainClock } from './shared/chain/clock.js';
+import { blockTime, chainClock } from './shared/chain/clock.js';
 import { createDatabase, type DatabaseClient } from './shared/db/database.js';
 import { authenticateIfPresent, type AuthOptions } from './shared/http/auth.js';
 import { createLogger } from './shared/http/logger.js';
@@ -37,6 +39,8 @@ type SharedCradle = {
   chain: PublicClient;
   /** The latest block's time: "now" for every deadline (ADR-015). */
   chainNow: () => Promise<Date>;
+  /** One block's timestamp, for mirror rows stored without it. */
+  blockTime: (blockNumber: string) => Promise<Date>;
   /** The server clock; injected so tests fix it (SR-1). */
   clock: () => Date;
   storage: Storage;
@@ -50,7 +54,8 @@ export type Cradle = SharedCradle &
   JobsCradle &
   CampaignsCradle &
   TreesCradle &
-  ReportsCradle;
+  ReportsCradle &
+  CarbonCradle;
 
 /** The composition root: shared singletons, then each feature's register(). */
 export const createRootContainer = (config: Config): AwilixContainer<Cradle> => {
@@ -75,6 +80,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
       createChainClient(settings.RPC_URL, settings.RPC_TIMEOUT_MS),
     ).singleton(),
     chainNow: asFunction(({ chain }: Cradle) => chainClock(chain)).singleton(),
+    blockTime: asFunction(({ chain }: Cradle) => blockTime(chain)).singleton(),
     clock: asValue(() => new Date()),
     storage: asFunction(({ config: settings }: Cradle) => createStorage(settings)).singleton(),
     verifyToken: asFunction(({ config: settings }: Cradle) =>
@@ -93,6 +99,7 @@ export const createRootContainer = (config: Config): AwilixContainer<Cradle> => 
   registerCampaigns(container);
   registerTrees(container);
   registerReports(container);
+  registerCarbon(container);
 
   return container;
 };
@@ -112,11 +119,17 @@ export const publicRouters = (cradle: Cradle): Router[] => {
     campaignsRouter(cradle.campaignsService, signedInIfToken),
     treesRouter(cradle.treesService, signedInIfToken),
     reportsRouter(cradle.reportsService),
+    carbonPublicRouter(cradle.carbonService),
   ];
 };
 
 /** Every router mounted behind authentication; the access matrix (tests/integration/container.test.ts) covers each. */
-export const privateRouters = ({ accountsService, jobsService }: Cradle): Router[] => [
+export const privateRouters = ({
+  accountsService,
+  jobsService,
+  carbonService,
+}: Cradle): Router[] => [
   accountsRouter(accountsService),
   jobsRouter(jobsService),
+  carbonHoldingsRouter(carbonService),
 ];
