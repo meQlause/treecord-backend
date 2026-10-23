@@ -1,0 +1,64 @@
+# Local stack (ADR-018): PostgreSQL 17, MinIO with the two private buckets (ADR-020), anvil with the frozen
+# contracts deployed by treecord-backend's own Deploy.s.sol (ADR-001). Data lives in tmpfs, so
+# `docker compose down` resets the database, storage and chain together: the database never mirrors a chain
+# that no longer exists.
+name: treecord
+
+x-minio-image:
+  &minio-image # MinIO stopped publishing images; this is RELEASE.2025-09-07T16-13-09Z by digest (it includes mc).
+  image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: treecord
+      POSTGRES_PASSWORD: treecord
+      POSTGRES_DB: treecord
+    ports: ['${POSTGRES_PORT:-5432}:5432']
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U treecord]
+      interval: 2s
+      retries: 30
+
+  minio:
+    <<: *minio-image
+    command: [server, /data, --console-address, ':9001']
+    environment:
+      MINIO_ROOT_USER: treecord
+      MINIO_ROOT_PASSWORD: treecord-secret
+    ports: ['${MINIO_PORT:-9000}:9000', '${MINIO_CONSOLE_PORT:-9001}:9001']
+    tmpfs: [/data]
+
+  minio-buckets:
+    <<: *minio-image
+    depends_on: [minio]
+    tmpfs: [/data] # the image declares a /data volume; tmpfs keeps it from leaving one behind
+    entrypoint: [sh, -c]
+    command:
+      - >-
+        until mc alias set local http://minio:9000 treecord treecord-secret; do sleep 1; done &&
+        mc mb --ignore-existing local/evidence local/keyframes &&
+        mc anonymous set none local/evidence &&
+        mc anonymous set none local/keyframes
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.7.1
+    entrypoint: [anvil, --host, 0.0.0.0, --chain-id, '31337', --block-time, '1']
+    ports: ['${ANVIL_PORT:-8545}:8545']
+    healthcheck:
+      test: [CMD, cast, block-number, --rpc-url, 'http://127.0.0.1:8545']
+      interval: 2s
+      retries: 30
+
+  contracts:
+    build:
+      context: docker/contracts
+      additional_contexts:
+        contracts: ../treecord-backend/packages/contracts
+    env_file: ../treecord-backend/packages/contracts/.env.anvil
+    depends_on:
+      anvil:
+        condition: service_healthy
+    command: [forge script script/Deploy.s.sol --rpc-url http://anvil:8545 --broadcast]
