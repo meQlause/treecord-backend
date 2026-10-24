@@ -86,7 +86,7 @@ const uploads = async (database: DatabaseClient, sari: string): Promise<void> =>
               '2026-10-18T07:05:00Z', 7, '{"acc":8.4}', ${DEVICE_ID}, '2026-10-18T07:10:00Z', null),
            (${REJECTED}, ${sari}, ${ROOTS}, 'ALIVE', 2, null, 3001, ${'2'.repeat(64)}, 'rejected',
               '2026-10-17T06:40:00Z', 6, '{"acc":41.0}', ${DEVICE_ID}, '2026-10-17T06:45:00Z',
-              '[{"check":"gps_accuracy","ok":false,"value":"41.0 m","limit":"≤ 30 m","reason":"gps_inaccurate"}]'),
+              '[{"check":"gps_accuracy","ok":false,"value":"341.0 m","limit":"≤ 300 m","reason":"gps_inaccurate"}]'),
            (${PLANTING}, ${sari}, ${ROOTS}, 'PLANTED', 0, 1, null, ${'3'.repeat(64)}, 'onchain',
               '2026-04-18T05:12:00Z', 8, '{"acc":6.2}', ${DEVICE_ID}, '2026-04-18T05:20:00Z', null),
            (gen_random_uuid(), ${sari}, ${ROOTS}, 'ALIVE', 2, null, 3002, ${'4'.repeat(64)}, 'queued',

@@ -59,7 +59,7 @@ export const UPLOAD_WINDOW_MS = 72 * 60 * 60 * 1000;
 /** Capture times further in the future than this are rejected. */
 export const MAX_FUTURE_CAPTURE_MS = 5 * 60 * 1000;
 /** Required GPS accuracy, in meters. */
-export const MAX_GPS_ACCURACY_M = 30;
+export const MAX_GPS_ACCURACY_M = 300;
 /** Later check-ins must be within this distance of the tree's first location, in meters. */
 export const CHECK_IN_RADIUS_M = 15;
 /** Public on-chain geohash precision (about 150 m cells). */
