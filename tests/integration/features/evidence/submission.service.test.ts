@@ -115,8 +115,8 @@ describe('POST /api/v1/evidence/:submissionId/submit, failing prechecks', () => 
     expect(stored?.precheck_results.map((row) => row.check)).toHaveLength(14);
     expect(stored?.precheck_results.find((row) => row.check === 'gps_accuracy')).toMatchObject({
       ok: false,
-      value: '41.0 m',
-      limit: '≤ 30 m',
+      value: '341.0 m',
+      limit: '≤ 300 m',
       reason: 'gps_inaccurate',
     });
     expect(jobs.rows[0]?.n).toBe(0);

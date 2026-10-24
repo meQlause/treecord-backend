@@ -89,7 +89,7 @@ describe('submit prechecks', () => {
       check: 'gps_accuracy',
       ok: true,
       value: '8.4 m',
-      limit: '≤ 30 m',
+      limit: '≤ 300 m',
       reason: null,
     });
     expect(rows[6]).toMatchObject({ value: '2.9 m away', limit: '≤ 15 m from the planting' });
@@ -139,9 +139,9 @@ describe('submit prechecks: time, GPS and place', () => {
     expect(withPayload({ capturedAt: NOW + 5 * MINUTE + 1 })).toEqual(['future_capture']);
   });
 
-  it('GPS accuracy: 30.0 m passes, 30.1 m fails (FR-134)', () => {
-    expect(withPayload({ acc: 30 })).toEqual([]);
-    expect(withPayload({ acc: 30.1 })).toEqual(['gps_inaccurate']);
+  it('GPS accuracy: 300.0 m passes, 300.1 m fails (FR-134)', () => {
+    expect(withPayload({ acc: 300 })).toEqual([]);
+    expect(withPayload({ acc: 300.1 })).toEqual(['gps_inaccurate']);
   });
 
   it('a check-in within 15 m of the planting passes; beyond, or with no planting location, it moved', () => {
@@ -183,7 +183,7 @@ describe('submit prechecks for a planting', () => {
 
   it('the FR-130 acceptance pair keeps its order: GPS accuracy, then region', () => {
     expect(
-      reasons({ payload: { ...PLANTING.payload, ...north(3000), acc: 41 } }, PLANTING),
+      reasons({ payload: { ...PLANTING.payload, ...north(3000), acc: 341 } }, PLANTING),
     ).toEqual(['gps_inaccurate', 'outside_region']);
   });
 

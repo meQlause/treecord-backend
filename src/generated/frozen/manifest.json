@@ -83,7 +83,7 @@
     },
     "src/generated/frozen/constants.ts": {
       "source": "packages/shared/src/constants.ts",
-      "sha256": "f151887d6454da750807b3714dd28574031ac7d7f948a53f25cdf256f47c9f8b"
+      "sha256": "6ab48a8f63b86fa601e6c61cd37af1f5139018a13ebcf7a218da61e083e30f33"
     },
     "src/generated/frozen/eip712.ts": {
       "source": "packages/shared/src/eip712.ts",
