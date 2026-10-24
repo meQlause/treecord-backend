@@ -9,6 +9,7 @@ import {
   scoreJobPayloadSchema,
   setPriceJobPayloadSchema,
 } from '../../generated/frozen/jobs.js';
+import { faucetJobPayloadSchema } from '../../shared/chain/faucet-jobs.js';
 import type { DatabaseClient, DatabaseTransaction } from '../../shared/db/database.js';
 import { DomainError } from '../../shared/errors.js';
 import type { EnqueueOutcome } from './jobs.mapper.js';
@@ -35,6 +36,8 @@ const PAYLOAD_SCHEMAS: Record<JobKind, ZodType> = {
   resolve_flag: resolveFlagJobPayloadSchema,
   score: scoreJobPayloadSchema,
   attestation: attestationJobPayloadSchema,
+  faucet_eth: faucetJobPayloadSchema,
+  faucet_usdc: faucetJobPayloadSchema,
 };
 
 export type EnqueueInput = {

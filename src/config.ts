@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FAUCET_CHAINS } from './shared/chain/faucet-jobs.js';
 
 // docs/BE/be-stack.md §5. The only module that reads process.env (NFR-008, ADR-014).
 const MAX_PORT = 65_535;
@@ -16,38 +17,64 @@ const PLANNED_LIMITS = {
 
 const positiveInt = z.coerce.number().int().positive();
 const httpUrl = z.url({ protocol: /^https?$/ });
+const positiveAmount = z.string().regex(/^[1-9]\d{0,77}$/, 'a positive decimal integer');
 
-const configSchema = z.object({
-  PORT: positiveInt.max(MAX_PORT),
-  DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
-  DATABASE_POOL_MAX: positiveInt,
-  CHAIN_ID: positiveInt,
-  RPC_URL: httpUrl,
-  PRIVY_APP_ID: z.string().min(1),
-  PRIVY_APP_SECRET: z.string().min(1),
-  ATTESTER_PRIVATE_KEY: z.string().regex(PRIVATE_KEY, 'a 0x-prefixed 32-byte hex key'),
-  S3_ENDPOINT: httpUrl,
-  S3_PUBLIC_ENDPOINT: httpUrl,
-  S3_REGION: z.string().min(1),
-  S3_ACCESS_KEY: z.string().min(1),
-  S3_SECRET_KEY: z.string().min(1),
-  // ADR-020: empty on MinIO; the project id and a dash on Cloud Storage, where bucket names are global
-  S3_BUCKET_PREFIX: z.string().default(''),
-  WEB_ORIGIN: httpUrl,
-  // campaigns §4: the start of every metadataURI, never the request's Host
-  PUBLIC_API_URL: httpUrl,
-  // ADR-007: wallet-signature sign-in exists only for the demo scripts and is off by default
-  DEMO_WALLET_AUTH: z
-    .enum(['true', 'false'])
-    .default('false')
-    .transform((value) => value === 'true'),
-  LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
-  JSON_BODY_LIMIT_KB: positiveInt.default(PLANNED_LIMITS.jsonBodyLimitKb),
-  DATABASE_STATEMENT_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.statementTimeoutMs),
-  RPC_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.rpcTimeoutMs),
-  S3_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.s3TimeoutMs),
-  SHUTDOWN_GRACE_MS: positiveInt.default(PLANNED_LIMITS.shutdownGraceMs),
-});
+const configSchema = z
+  .object({
+    PORT: positiveInt.max(MAX_PORT),
+    DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+    DATABASE_POOL_MAX: positiveInt,
+    CHAIN_ID: positiveInt,
+    RPC_URL: httpUrl,
+    PRIVY_APP_ID: z.string().min(1),
+    PRIVY_APP_SECRET: z.string().min(1),
+    ATTESTER_PRIVATE_KEY: z.string().regex(PRIVATE_KEY, 'a 0x-prefixed 32-byte hex key'),
+    S3_ENDPOINT: httpUrl,
+    S3_PUBLIC_ENDPOINT: httpUrl,
+    S3_REGION: z.string().min(1),
+    S3_ACCESS_KEY: z.string().min(1),
+    S3_SECRET_KEY: z.string().min(1),
+    // ADR-020: empty on MinIO; the project id and a dash on Cloud Storage, where bucket names are global
+    S3_BUCKET_PREFIX: z.string().default(''),
+    WEB_ORIGIN: httpUrl,
+    // campaigns §4: the start of every metadataURI, never the request's Host
+    PUBLIC_API_URL: httpUrl,
+    // ADR-007: wallet-signature sign-in exists only for the demo scripts and is off by default
+    DEMO_WALLET_AUTH: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
+    JSON_BODY_LIMIT_KB: positiveInt.default(PLANNED_LIMITS.jsonBodyLimitKb),
+    DATABASE_STATEMENT_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.statementTimeoutMs),
+    RPC_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.rpcTimeoutMs),
+    S3_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.s3TimeoutMs),
+    SHUTDOWN_GRACE_MS: positiveInt.default(PLANNED_LIMITS.shutdownGraceMs),
+    // testnet faucet: what a newly stored wallet is sent once (wei, USDC base units); both unset turns it off
+    FAUCET_ETH_WEI: positiveAmount.optional(),
+    FAUCET_USDC_UNITS: positiveAmount.optional(),
+  })
+  .superRefine((config, context) => {
+    const set = [config.FAUCET_ETH_WEI, config.FAUCET_USDC_UNITS].filter(
+      (value) => value !== undefined,
+    );
+
+    if (set.length === 1) {
+      context.addIssue({
+        code: 'custom',
+        path: ['FAUCET_ETH_WEI'],
+        message: 'set both faucet amounts, or neither',
+      });
+    }
+
+    if (set.length > 0 && !FAUCET_CHAINS.includes(config.CHAIN_ID)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['CHAIN_ID'],
+        message: 'the faucet runs on a testnet only',
+      });
+    }
+  });
 
 export type Config = z.infer<typeof configSchema>;
 

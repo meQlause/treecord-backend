@@ -14,27 +14,31 @@ export const accountsRepository = (database: Kysely<DB>) => ({
       .where('privy_user_id', '=', privyUserId)
       .executeTakeFirst(),
 
-  /** accounts §0 step 4: the privy_user_id key absorbs a concurrent first sign-in. */
+  /** accounts §0 step 4: the privy_user_id key absorbs a concurrent first sign-in. The new row's id, if this wrote it. */
   insertIgnoringExisting: async (
     privyUserId: string,
     walletAddress: string | null,
-  ): Promise<void> => {
-    await database
-      .insertInto('profiles')
-      .values({ privy_user_id: privyUserId, wallet_address: walletAddress })
-      .onConflict((conflict) => conflict.column('privy_user_id').doNothing())
-      .execute();
-  },
+  ): Promise<string | undefined> =>
+    (
+      await database
+        .insertInto('profiles')
+        .values({ privy_user_id: privyUserId, wallet_address: walletAddress })
+        .onConflict((conflict) => conflict.column('privy_user_id').doNothing())
+        .returning('id')
+        .executeTakeFirst()
+    )?.id,
 
-  /** accounts §0 step 5: only fills a wallet the profile does not have yet. */
-  setWalletIfMissing: async (id: string, walletAddress: string): Promise<void> => {
-    await database
-      .updateTable('profiles')
-      .set({ wallet_address: walletAddress })
-      .where('id', '=', id)
-      .where('wallet_address', 'is', null)
-      .execute();
-  },
+  /** accounts §0 step 5: only fills a wallet the profile does not have yet. The id, if this filled it. */
+  setWalletIfMissing: async (id: string, walletAddress: string): Promise<string | undefined> =>
+    (
+      await database
+        .updateTable('profiles')
+        .set({ wallet_address: walletAddress })
+        .where('id', '=', id)
+        .where('wallet_address', 'is', null)
+        .returning('id')
+        .executeTakeFirst()
+    )?.id,
 
   /**
    * accounts §2 "Write": one statement, no read-then-write. Acceptance is set once (coalesce); the role guard in the

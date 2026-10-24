@@ -19,7 +19,9 @@ export type JobKind =
   | 'estimate'
   | 'issue'
   | 'set_price'
-  | 'resolve_flag';
+  | 'resolve_flag'
+  | 'faucet_eth'
+  | 'faucet_usdc';
 
 /**
  * The change to one job. `retryInMs` becomes next_attempt_at (that long after now); `lock` "release" clears

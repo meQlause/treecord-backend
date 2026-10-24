@@ -20,11 +20,14 @@ let test: TestDatabase;
 let privy: FakePrivy;
 // What Privy reports as each user's embedded wallet; a user missing here has none yet.
 let wallets: Map<string, string>;
+// The testnet faucet's amounts; null leaves it off, as every describe but the faucet's does.
+let faucet: { ethWei: string; usdcUnits: string } | null = null;
 
 const app = () => {
   const accounts = createAccountsService({
     repository: accountsRepository(test.database),
     walletOf: async (privyUserId) => wallets.get(privyUserId) ?? null,
+    faucet: faucet === null ? null : { database: test.database, ...faucet },
   });
 
   return testApp({
@@ -248,5 +251,72 @@ describe('POST /api/v1/profile refuses a malformed body or a taken wallet', () =
     expect((await status(409, postProfile({ displayName: 'Sari' }))).body.error.code).toBe(
       'wallet_already_linked',
     );
+  });
+});
+
+// Testnet faucet: the first time a profile's wallet is stored, gas and test USDC are queued for it, once.
+describe('GET /api/v1/me with the testnet faucet on', () => {
+  const ETH_WEI = '5000000000000000';
+  const USDC_UNITS = '100000000';
+  const ALEX = 'did:privy:cm2alex0000000000000000';
+
+  const faucetJobs = async () =>
+    (
+      await sql<{ kind: string; payload: unknown; idempotency_key: string }>`
+        select kind, payload, idempotency_key from public.relayer_jobs
+        where kind in ('faucet_eth', 'faucet_usdc') order by kind`.execute(test.database)
+    ).rows;
+
+  beforeEach(async () => {
+    wallets = new Map();
+    faucet = { ethWei: ETH_WEI, usdcUnits: USDC_UNITS };
+    await sql`delete from public.relayer_jobs`.execute(test.database);
+    await sql`delete from public.profiles`.execute(test.database);
+  });
+
+  afterAll(() => {
+    faucet = null;
+  });
+
+  it('a first sign-in with a wallet queues one ETH and one USDC job for it, and signing in again queues no more', async () => {
+    wallets.set(SARI, SARI_WALLET);
+
+    const id = (await status(200, getMe())).body.profile.id;
+
+    await status(200, getMe());
+
+    expect(await faucetJobs()).toEqual([
+      {
+        kind: 'faucet_eth',
+        payload: { to: SARI_WALLET, amount: ETH_WEI },
+        idempotency_key: `faucet_eth:${id}`,
+      },
+      {
+        kind: 'faucet_usdc',
+        payload: { to: SARI_WALLET, amount: USDC_UNITS },
+        idempotency_key: `faucet_usdc:${id}`,
+      },
+    ]);
+  });
+
+  it('a profile created before its wallet gets the jobs when the wallet is stored, not before', async () => {
+    await status(200, getMe());
+
+    expect(await faucetJobs()).toEqual([]);
+
+    wallets.set(SARI, SARI_WALLET);
+    await status(200, getMe());
+
+    expect((await faucetJobs()).map((job) => job.kind)).toEqual(['faucet_eth', 'faucet_usdc']);
+  });
+
+  it('a wallet already linked to another profile still answers 409, and queues nothing for it', async () => {
+    wallets.set(SARI, SARI_WALLET);
+    await status(200, getMe());
+    await sql`delete from public.relayer_jobs`.execute(test.database);
+    wallets.set(ALEX, SARI_WALLET);
+
+    expect((await status(409, getMe(ALEX))).body.error.code).toBe('wallet_already_linked');
+    expect(await faucetJobs()).toEqual([]);
   });
 });
