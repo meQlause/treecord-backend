@@ -1,5 +1,5 @@
-# Deploys the frozen contracts (treecord-backend/packages/contracts, read-only build context) to the local anvil.
-# The two Solidity libraries are the versions treecord-backend's package.json pins, laid out where its
+# Deploys the frozen contracts (the root's contracts/ submodule, read-only build context) to the local anvil.
+# The two Solidity libraries are the versions contracts/package.json pins, laid out where its
 # remappings.txt expects them (node_modules/), so nothing in the frozen folder changes.
 FROM ghcr.io/foundry-rs/foundry:v1.7.1
 

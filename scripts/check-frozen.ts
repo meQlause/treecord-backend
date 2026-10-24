@@ -1,5 +1,6 @@
 // ADR-002, ADR-019: the frozen copies — src/generated/frozen/ and the nine migrations/1nn_*.sql — match their SHA-256
-// fingerprints, and, when treecord-backend is checked out next to this repository, still match their source files.
+// fingerprints. ADR-021 retired the live comparison with a sibling checkout: the manifest alone guards the copies,
+// and records where each one was copied from (azkawm/treecord-backend at `sourceCommit`).
 //   node scripts/check-frozen.ts           check
 //   node scripts/check-frozen.ts --write   record the fingerprints after a deliberate re-copy
 import { createHash } from 'node:crypto';
@@ -8,9 +9,8 @@ import { join, relative, sep } from 'node:path';
 
 const FROZEN = 'src/generated/frozen';
 const MANIFEST = join(FROZEN, 'manifest.json');
-const SOURCE_REPO = process.env['TREECORD_BACKEND_DIR'] ?? '../treecord-backend';
 const FROZEN_MIGRATION = /^1\d\d_/;
-// Each frozen root, which of its files are frozen, and where each lives in treecord-backend (SRS §2.6).
+// Each frozen root, which of its files are frozen, and the path each was copied from (SRS §2.6).
 const ROOTS = [
   {
     dir: FROZEN,
@@ -28,7 +28,6 @@ const ROOTS = [
 ];
 
 type Manifest = {
-  sourceRepo: string;
   sourceCommit: string;
   files: Record<string, { source: string; sha256: string }>;
 };
@@ -43,7 +42,7 @@ const walk = (dir: string): string[] =>
 
 const posix = (path: string): string => path.split(sep).join('/');
 
-// Repository-relative path of every frozen copy, with the treecord-backend path it was copied from.
+// Repository-relative path of every frozen copy, with the path it was copied from.
 const copies = (): Array<{ path: string; source: string }> =>
   ROOTS.flatMap(({ dir, frozen, source }) =>
     walk(dir)
@@ -52,48 +51,20 @@ const copies = (): Array<{ path: string; source: string }> =>
       .map(({ path, file }) => ({ path, source: source(file) })),
   ).sort((left, right) => left.path.localeCompare(right.path));
 
-// The source commit, read from .git directly: a loose ref, or packed-refs after `git gc`.
-const sourceCommit = (): string => {
-  const head = readFileSync(join(SOURCE_REPO, '.git', 'HEAD'), 'utf8').trim();
-  const ref = head.startsWith('ref: ') ? head.slice('ref: '.length) : undefined;
-
-  if (ref === undefined) {
-    return head;
-  }
-
-  const loose = join(SOURCE_REPO, '.git', ref);
-
-  if (existsSync(loose)) {
-    return readFileSync(loose, 'utf8').trim();
-  }
-
-  const packed = readFileSync(join(SOURCE_REPO, '.git', 'packed-refs'), 'utf8');
-
-  return (
-    packed
-      .split('\n')
-      .find((line) => line.endsWith(` ${ref}`))
-      ?.split(' ')[0] ?? 'unknown'
-  );
-};
+const readManifest = (): Manifest => JSON.parse(readFileSync(MANIFEST, 'utf8')) as Manifest;
 
 const write = (): void => {
   const files = Object.fromEntries(
     copies().map(({ path, source }) => [path, { source, sha256: sha256(path) }]),
   );
-  const manifest: Manifest = {
-    sourceRepo: 'treecord-backend',
-    sourceCommit: sourceCommit(),
-    files,
-  };
+  const manifest: Manifest = { sourceCommit: readManifest().sourceCommit, files };
 
   writeFileSync(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
 };
 
 const check = (): string[] => {
-  const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8')) as Manifest;
-  const listed = Object.entries(manifest.files);
-  const changed = listed
+  const manifest = readManifest();
+  const changed = Object.entries(manifest.files)
     .filter(([path, entry]) => !existsSync(path) || sha256(path) !== entry.sha256)
     .map(
       ([path]) =>
@@ -102,20 +73,8 @@ const check = (): string[] => {
   const unlisted = copies()
     .filter(({ path }) => !(path in manifest.files))
     .map(({ path }) => `${path}: not in manifest.json`);
-  const upstream = existsSync(SOURCE_REPO)
-    ? listed
-        .filter(([, entry]) => {
-          const source = join(SOURCE_REPO, entry.source);
 
-          return !existsSync(source) || sha256(source) !== entry.sha256;
-        })
-        .map(
-          ([, entry]) =>
-            `${SOURCE_REPO}/${entry.source}: changed upstream — re-copy and run --write`,
-        )
-    : [];
-
-  return [...changed, ...unlisted, ...upstream];
+  return [...changed, ...unlisted];
 };
 
 if (process.argv.includes('--write')) {

@@ -11,8 +11,7 @@ export default defineConfig({
   plugins: [
     {
       // ADR-002: the frozen attester imports @treecord/shared unedited; tsconfig.json `paths` says the same for tsc and
-      // tsx. Only imports from the frozen folder: the chain tests also load treecord-backend, whose own
-      // @treecord/shared is the whole package.
+      // tsx. Only imports from the frozen folder.
       name: 'frozen-treecord-shared',
       enforce: 'pre',
       resolveId: (source, importer) =>

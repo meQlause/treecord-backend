@@ -1,7 +1,4 @@
-import { existsSync } from 'node:fs';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { sql } from 'kysely';
 import request from 'supertest';
 import {
@@ -13,7 +10,6 @@ import {
   stringToHex,
   type Address,
   type Hex,
-  type PublicClient,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
@@ -21,38 +17,35 @@ import { expect } from 'vitest';
 import { campaignAbi, campaignFactoryAbi } from '../../src/generated/frozen/abis/index.js';
 import { DEFAULT_SPLIT } from '../../src/generated/frozen/constants.js';
 import { geohashToBytes8, type EvidencePayload } from '../../src/generated/frozen/evidence.js';
+import { Attester } from '../../src/generated/frozen/attester.js';
 import { chainClock } from '../../src/shared/chain/clock.js';
+import { createChainClients } from '../../src/shared/chain/wallets.js';
+import { createWorkerDatabase } from '../../src/shared/db/worker-database.js';
+import { createWorkerStorage } from '../../src/shared/storage/storage.js';
+import { createWorker } from '../../src/worker/create-worker.js';
+import { MockAiClient } from '../../src/worker/scoring/mock-ai-client.js';
 import { theSpecies } from '../fixtures/mirror.js';
 import { testApi, type TestApi } from './api.js';
+import {
+  ANVIL_KEYS,
+  artifactsBuilt,
+  findAnvil,
+  startLocalChain,
+  type LocalChain,
+} from './chain.js';
 import { startMigratedDatabase, type TestDatabase } from './database.js';
 import { fakePrivy } from './fake-privy.js';
 import { startMinio, type TestMinio } from './minio.js';
 import { sha256Hex, type Phone } from './planter-phone.js';
 
-// ADR-001: this API on a fresh anvil with the B2 worker in process, reading the jobs the API writes. The worker and
-// its chain helper come from the sibling treecord-backend checkout (ADR-001 keeps them there); a test using this
-// fails, never skips, when it is missing.
-const WORKER_REPO = fileURLToPath(new URL('../../../treecord-backend/', import.meta.url));
+// ADR-001, ADR-021: this API on a fresh anvil with the worker in process, reading the jobs the API writes. The
+// contracts come from the root's contracts/ submodule; a test using this fails, never skips, when they are not built.
 const ONCHAIN_TIMEOUT_MS = 90_000;
 
 /** One time unit is 60 s here, so a month of the commitment passes in a minute of chain time. */
 export const TIME_UNIT = 60n;
 
 export const JAKARTA = { lat: -6.2, lon: 106.816666 };
-
-type LocalChain = {
-  rpcUrl: string;
-  client: PublicClient;
-  deployment: {
-    chainId: number;
-    campaignFactory: Address;
-    usdc: Address;
-    treeRegistry: Address;
-    carbonLedger: Address;
-    verificationGateway: Address;
-  };
-  stop: () => Promise<void>;
-};
 
 type AnvilKeys = Record<'operator' | 'donor' | 'relayer' | 'attester', Hex>;
 
@@ -68,9 +61,6 @@ export type Onchain = {
   row: <Row>(query: ReturnType<typeof sql<Row>>) => Promise<Row | undefined>;
   stop: () => Promise<void>;
 };
-
-const fromWorkerRepo = async <Module>(path: string): Promise<Module> =>
-  (await import(pathToFileURL(join(WORKER_REPO, path)).href)) as Module;
 
 const mockUsdcAbi = [
   {
@@ -149,80 +139,77 @@ export const walletOf = (stack: Pick<Onchain, 'chain'>, key: Hex) =>
 export const mined = async (stack: Pick<Onchain, 'chain'>, sent: Promise<Hex>) =>
   stack.chain.client.waitForTransactionReceipt({ hash: await sent });
 
-/** The B2 worker on this stack's database, MinIO and chain, with the mock AI (ADR-018). */
-const startWorker = async ({
+/** The worker on this stack's database, MinIO and chain, with the mock AI (ADR-018). */
+const startWorker = ({
   test,
   minio,
   chain,
   keys,
-}: Omit<Onchain, 'api' | 'row' | 'stop'>): Promise<WorkerInstance> => {
-  const pipeline = await fromWorkerRepo<{
-    createPool: (url: string, max: number, log: object) => unknown;
-    createStorage: (config: object) => unknown;
-    Attester: new (key: Hex, chainId: number, gateway: Address) => unknown;
-    MockAiClient: new () => unknown;
-  }>('packages/pipeline/dist/index.js');
-  const { Worker } = await fromWorkerRepo<{ Worker: new (options: object) => WorkerInstance }>(
-    'apps/worker/src/worker.ts',
-  );
-  const { createChainClients } = await fromWorkerRepo<{
-    createChainClients: (options: object) => unknown;
-  }>('apps/worker/src/chain.ts');
+}: Omit<Onchain, 'api' | 'row' | 'stop'>): WorkerInstance & {
+  db: { destroy: () => Promise<void> };
+} => {
   const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
-  const db = pipeline.createPool(test.postgres.getConnectionUri(), 5, silent);
-
-  return new Worker({
+  const db = createWorkerDatabase({
+    url: test.postgres.getConnectionUri(),
+    poolMax: 5,
+    onConnectionError: () => undefined,
+  });
+  const clients = createChainClients({
+    rpcUrl: chain.rpcUrl,
+    chainId: chain.deployment.chainId,
+    operatorKey: keys.operator,
+    relayerKey: keys.relayer,
+    pollingIntervalMs: 100,
+  });
+  const worker = createWorker({
     mode: 'all',
     db,
-    clients: createChainClients({
-      rpcUrl: chain.rpcUrl,
-      chainId: chain.deployment.chainId,
-      operatorKey: keys.operator,
-      relayerKey: keys.relayer,
-      pollingIntervalMs: 100,
-    }),
+    clients,
     deployment: chain.deployment,
     log: silent,
     workerId: `api-e2e:${process.pid}`,
     scoreDeps: {
       db,
-      storage: pipeline.createStorage(minio.config),
-      attester: new pipeline.Attester(
+      storage: createWorkerStorage({ S3_TIMEOUT_MS: 15_000, ...minio.config }),
+      attester: new Attester(
         keys.attester,
         chain.deployment.chainId,
         chain.deployment.verificationGateway,
       ),
       chainNow: async () => Number((await chain.client.getBlock({ blockTag: 'latest' })).timestamp),
-      ai: new pipeline.MockAiClient(),
+      ai: new MockAiClient(),
       log: silent,
     },
-    indexer: { pollMs: 250, cursorName: `indexer:api-e2e:${randomUUID()}`, confirmations: 2 },
-    relayer: { pollMs: 250, receiptTimeoutMs: 20_000 },
-    scheduler: { intervalMs: 3_600_000, maxCallsPerRun: 1_000 },
+    tuning: {
+      indexerPollMs: 250,
+      relayerPollMs: 250,
+      schedulerIntervalMs: 3_600_000,
+      indexer: { cursorName: `indexer:api-e2e:${randomUUID()}`, confirmations: 2 },
+      receiptTimeoutMs: 20_000,
+      maxCallsPerRun: 1_000,
+    },
   });
+
+  return { start: () => worker.start(), stop: () => worker.stop(), db };
 };
 
 /** PostgreSQL, MinIO and anvil on `anvilPort`, the species seeded, the API on chain time and the worker running. */
 export const startOnchain = async (anvilPort: number): Promise<Onchain> => {
-  const localChain = await fromWorkerRepo<{
-    findAnvil: () => string | null;
-    artifactsBuilt: () => boolean;
-    startLocalChain: (anvil: string, port: number) => Promise<LocalChain>;
-    ANVIL_KEYS: AnvilKeys;
-  }>('apps/worker/src/test/local-chain.ts');
-  const anvil = localChain.findAnvil();
+  const anvil = findAnvil();
 
-  if (!existsSync(WORKER_REPO) || anvil === null || !localChain.artifactsBuilt()) {
-    throw new Error('needs ../treecord-backend with built contracts and Foundry (anvil)');
+  if (anvil === null || !artifactsBuilt()) {
+    throw new Error(
+      'needs Foundry (anvil) and the contracts built: cd ../contracts && npm ci && forge build',
+    );
   }
 
-  const keys = localChain.ANVIL_KEYS;
+  const keys = ANVIL_KEYS;
   const [test, minio, chain] = await Promise.all([
     startMigratedDatabase(),
     startMinio(),
-    localChain.startLocalChain(anvil, anvilPort),
+    startLocalChain(anvil, anvilPort),
   ]);
-  const worker = await startWorker({ test, minio, chain, keys });
+  const worker = startWorker({ test, minio, chain, keys });
 
   await theSpecies(test.database);
   worker.start();
@@ -241,6 +228,7 @@ export const startOnchain = async (anvilPort: number): Promise<Onchain> => {
     row: async (query) => (await query.execute(test.database)).rows[0],
     stop: async () => {
       await worker.stop();
+      await worker.db.destroy();
       await Promise.all([chain.stop(), test.stop(), minio.stop()]);
     },
   };

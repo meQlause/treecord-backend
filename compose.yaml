@@ -1,5 +1,5 @@
 # Local stack (ADR-018): PostgreSQL 17, MinIO with the two private buckets (ADR-020), anvil with the frozen
-# contracts deployed by treecord-backend's own Deploy.s.sol (ADR-001). Data lives in tmpfs, so
+# contracts deployed by the contracts/ submodule's own Deploy.s.sol (ADR-001, ADR-021). Data lives in tmpfs, so
 # `docker compose down` resets the database, storage and chain together: the database never mirrors a chain
 # that no longer exists.
 name: treecord
@@ -56,8 +56,8 @@ services:
     build:
       context: docker/contracts
       additional_contexts:
-        contracts: ../treecord-backend/packages/contracts
-    env_file: ../treecord-backend/packages/contracts/.env.anvil
+        contracts: ../contracts
+    env_file: ../contracts/.env.anvil
     depends_on:
       anvil:
         condition: service_healthy

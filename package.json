@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "tsx --env-file=.env src/server.ts",
+    "worker": "tsx --env-file=.env src/worker.ts",
     "test": "vitest run",
     "check:parity": "node scripts/check-parity.ts",
     "format": "prettier --write . && eslint --fix --fix-type layout .",

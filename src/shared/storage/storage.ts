@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { GetObjectCommand, NoSuchKey, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  NoSuchKey,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 /** ADR-020: every link the API hands out lives 15 minutes. */
@@ -132,6 +138,59 @@ export const createStorage = (
         headers: { 'Content-Type': contentType, 'x-amz-checksum-sha256': sha256Base64 },
         expiresAt: new Date(signedAt.getTime() + LINK_SECONDS * MS_PER_SECOND).toISOString(),
       };
+    },
+  };
+};
+
+const NOT_FOUND = 404;
+
+/** The worker's view of MinIO (ADR-021): it writes keyframes and hands the AI service read links. */
+export type WorkerStorage = {
+  putObject: (bucket: string, key: string, body: Uint8Array, contentType: string) => Promise<void>;
+  /** A GET link signed for S3_PUBLIC_ENDPOINT, or null when the object does not exist. */
+  signedReadUrl: (bucket: string, key: string) => Promise<string | null>;
+};
+
+export const createWorkerStorage = (config: StorageConfig): WorkerStorage => {
+  const connection = (endpoint: string): S3Client =>
+    new S3Client({
+      endpoint,
+      region: config.S3_REGION,
+      forcePathStyle: true,
+      credentials: { accessKeyId: config.S3_ACCESS_KEY, secretAccessKey: config.S3_SECRET_KEY },
+      requestHandler: {
+        requestTimeout: config.S3_TIMEOUT_MS,
+        connectionTimeout: config.S3_TIMEOUT_MS,
+        throwOnRequestTimeout: true,
+      },
+    });
+  const client = connection(config.S3_ENDPOINT);
+  const presigner = connection(config.S3_PUBLIC_ENDPOINT);
+
+  return {
+    putObject: async (bucket, key, body, contentType) => {
+      await client.send(
+        new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }),
+      );
+    },
+
+    signedReadUrl: async (bucket, key) => {
+      try {
+        await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+      } catch (error) {
+        if (
+          (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode ===
+          NOT_FOUND
+        ) {
+          return null;
+        }
+
+        throw error;
+      }
+
+      return getSignedUrl(presigner, new GetObjectCommand({ Bucket: bucket, Key: key }), {
+        expiresIn: LINK_SECONDS,
+      });
     },
   };
 };
