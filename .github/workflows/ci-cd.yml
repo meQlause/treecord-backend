@@ -76,13 +76,13 @@ jobs:
             --max-retries 0 --quiet
           gcloud run jobs execute treecord-migrate --project "$GCP_PROJECT" --region "$GCP_REGION" --wait
       - name: Deploy the API
-        # FAUCET_*: a newly stored wallet is sent 0.005 ETH and 100 test USDC once, by the worker's operator wallet
+        # FAUCET_*: a newly stored wallet is sent 0.005 ETH and 10,000 test USDC once, by the worker's operator wallet
         run: |
           gcloud run deploy treecord-api \
             --project "$GCP_PROJECT" --region "$GCP_REGION" --image "$IMAGE:$GITHUB_SHA" \
             --service-account "treecord-api@$GCP_PROJECT.iam.gserviceaccount.com" \
             --add-cloudsql-instances "$SQL_INSTANCE" \
-            --set-env-vars "$COMMON_ENV,PRIVY_APP_ID=cmvmafmxp01080il0jl4a9x7u,WEB_ORIGIN=$WEB_ORIGIN,PUBLIC_API_URL=$API_URL,FAUCET_ETH_WEI=5000000000000000,FAUCET_USDC_UNITS=100000000" \
+            --set-env-vars "$COMMON_ENV,PRIVY_APP_ID=cmvmafmxp01080il0jl4a9x7u,WEB_ORIGIN=$WEB_ORIGIN,PUBLIC_API_URL=$API_URL,FAUCET_ETH_WEI=5000000000000000,FAUCET_USDC_UNITS=10000000000" \
             --set-secrets "DATABASE_URL=database-url:latest,PRIVY_APP_SECRET=privy-app-secret:latest,ATTESTER_PRIVATE_KEY=attester-private-key:latest,S3_ACCESS_KEY=s3-access-key:latest,S3_SECRET_KEY=s3-secret-key:latest" \
             --allow-unauthenticated --port 8080 --cpu 1 --memory 512Mi --min-instances 0 --max-instances 3 --quiet
       - name: Deploy the worker
@@ -94,7 +94,7 @@ jobs:
             --command node_modules/.bin/tsx --args src/worker.ts \
             --service-account "treecord-worker@$GCP_PROJECT.iam.gserviceaccount.com" \
             --add-cloudsql-instances "$SQL_INSTANCE" \
-            --set-env-vars "$COMMON_ENV,WORKER_MODE=all,WORKER_PORT=8080,MOCK_AI=true,INDEXER_CHUNK_BLOCKS=190" \
+            --set-env-vars "$COMMON_ENV,WORKER_MODE=all,WORKER_PORT=8080,MOCK_AI=true,INDEXER_CHUNK_BLOCKS=190,AUTO_FUND=true" \
             --set-secrets "DATABASE_URL=database-url:latest,ATTESTER_PRIVATE_KEY=attester-private-key:latest,OPERATOR_PRIVATE_KEY=operator-private-key:latest,RELAYER_PRIVATE_KEY=relayer-private-key:latest,S3_ACCESS_KEY=s3-access-key:latest,S3_SECRET_KEY=s3-secret-key:latest" \
             --no-allow-unauthenticated --port 8080 --cpu 1 --memory 512Mi \
             --min-instances 1 --max-instances 1 --no-cpu-throttling --quiet

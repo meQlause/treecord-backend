@@ -2,6 +2,7 @@
 // scheduler. Used by the process entry (src/worker.ts) and by the chain tests, so both run the same worker.
 import type { TreecordDeployment } from '../generated/frozen/addresses.js';
 import type { ChainClients } from '../shared/chain/wallets.js';
+import { AutoFunder } from './autofund/autofund.service.js';
 import { Indexer, type IndexerOptions } from './indexer/indexer.service.js';
 import { Metrics } from './metrics.js';
 import { NonceManager } from './relayer/nonces.js';
@@ -21,6 +22,8 @@ type WorkerTuning = {
   >;
   receiptTimeoutMs?: number;
   maxCallsPerRun?: number;
+  /** Testnet only: fill campaigns still funding from the operator wallet (AUTO_FUND). */
+  autoFund?: boolean;
 };
 
 export type WorkerParts = {
@@ -35,6 +38,9 @@ export type WorkerParts = {
   tuning: WorkerTuning;
   metrics?: Metrics;
 };
+
+// a new campaign is filled within this long of being indexed
+const AUTO_FUND_INTERVAL_MS = 10_000;
 
 const relayerLoops = (parts: WorkerParts, metrics: Metrics): Loop[] => {
   const { db, clients, deployment, log, workerId, scoreDeps, tuning } = parts;
@@ -63,8 +69,16 @@ const relayerLoops = (parts: WorkerParts, metrics: Metrics): Loop[] => {
     ...(tuning.maxCallsPerRun === undefined ? {} : { maxCallsPerRun: tuning.maxCallsPerRun }),
   });
   const poll = tuning.relayerPollMs;
+  const funder = tuning.autoFund
+    ? new AutoFunder({ db, clients, deployment, nonces, log, metrics })
+    : null;
+  const autoFund =
+    funder === null
+      ? []
+      : [{ name: 'autofund', intervalMs: AUTO_FUND_INTERVAL_MS, run: () => funder.tick() }];
 
   return [
+    ...autoFund,
     { name: 'relayer.score', intervalMs: poll, run: async () => (await relayer.tickScore()) > 0 },
     {
       name: 'relayer.attestation',
