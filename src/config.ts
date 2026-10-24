@@ -31,6 +31,8 @@ const configSchema = z.object({
   S3_REGION: z.string().min(1),
   S3_ACCESS_KEY: z.string().min(1),
   S3_SECRET_KEY: z.string().min(1),
+  // ADR-020: empty on MinIO; the project id and a dash on Cloud Storage, where bucket names are global
+  S3_BUCKET_PREFIX: z.string().default(''),
   WEB_ORIGIN: httpUrl,
   // campaigns §4: the start of every metadataURI, never the request's Host
   PUBLIC_API_URL: httpUrl,
@@ -98,6 +100,7 @@ const workerConfigSchema = z
     S3_REGION: z.string().min(1),
     S3_ACCESS_KEY: z.string().min(1),
     S3_SECRET_KEY: z.string().min(1),
+    S3_BUCKET_PREFIX: z.string().default(''),
     S3_TIMEOUT_MS: positiveInt.default(PLANNED_LIMITS.s3TimeoutMs),
     // ADR-018: the mock is the default while the first environment is local
     MOCK_AI: z

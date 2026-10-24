@@ -24,6 +24,9 @@ export type StorageConfig = {
   S3_REGION: string;
   S3_ACCESS_KEY: string;
   S3_SECRET_KEY: string;
+  /** ADR-020: put before every bucket name. Empty on MinIO (`evidence`, `keyframes`); on Cloud Storage, where
+   *  bucket names are global, the project id and a dash. */
+  S3_BUCKET_PREFIX?: string;
 };
 
 type UploadLink = {
@@ -80,6 +83,7 @@ export const createStorage = (
   config: StorageConfig,
   now: () => Date = () => new Date(),
 ): Storage => {
+  const named = (bucket: string): string => `${config.S3_BUCKET_PREFIX ?? ''}${bucket}`;
   const credentials = { accessKeyId: config.S3_ACCESS_KEY, secretAccessKey: config.S3_SECRET_KEY };
   // reads go to the internal host; links are signed for the public one the browser reaches
   const client = new S3Client({
@@ -105,10 +109,10 @@ export const createStorage = (
   });
 
   return {
-    sha256Of: (bucket, key) => hashOf(client, bucket, key),
+    sha256Of: (bucket, key) => hashOf(client, named(bucket), key),
 
     presignGet: (bucket, key) =>
-      getSignedUrl(presigner, new GetObjectCommand({ Bucket: bucket, Key: key }), {
+      getSignedUrl(presigner, new GetObjectCommand({ Bucket: named(bucket), Key: key }), {
         expiresIn: LINK_SECONDS,
         signingDate: now(),
       }),
@@ -118,7 +122,7 @@ export const createStorage = (
       const url = await getSignedUrl(
         presigner,
         new PutObjectCommand({
-          Bucket: bucket,
+          Bucket: named(bucket),
           Key: key,
           ContentType: contentType,
           ContentLength: contentLength,
@@ -152,6 +156,7 @@ export type WorkerStorage = {
 };
 
 export const createWorkerStorage = (config: StorageConfig): WorkerStorage => {
+  const named = (bucket: string): string => `${config.S3_BUCKET_PREFIX ?? ''}${bucket}`;
   const connection = (endpoint: string): S3Client =>
     new S3Client({
       endpoint,
@@ -170,13 +175,18 @@ export const createWorkerStorage = (config: StorageConfig): WorkerStorage => {
   return {
     putObject: async (bucket, key, body, contentType) => {
       await client.send(
-        new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }),
+        new PutObjectCommand({
+          Bucket: named(bucket),
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+        }),
       );
     },
 
     signedReadUrl: async (bucket, key) => {
       try {
-        await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        await client.send(new HeadObjectCommand({ Bucket: named(bucket), Key: key }));
       } catch (error) {
         if (
           (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode ===
@@ -188,7 +198,7 @@ export const createWorkerStorage = (config: StorageConfig): WorkerStorage => {
         throw error;
       }
 
-      return getSignedUrl(presigner, new GetObjectCommand({ Bucket: bucket, Key: key }), {
+      return getSignedUrl(presigner, new GetObjectCommand({ Bucket: named(bucket), Key: key }), {
         expiresIn: LINK_SECONDS,
       });
     },

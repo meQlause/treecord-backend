@@ -39,6 +39,21 @@ export const deployments: Partial<Record<number, TreecordDeployment>> = {
     carbonLedger: "0x0165878A594ca255338adfa4d48449f69242Eb8F",
     demoCampaign: "0x856e4424f806D16E8CBC702B3c0F2ede5468eae5",
   },
+  84532: {
+    chainId: 84532,
+    deployBlock: 49578967n,
+    deployer: "0x4894E5fc077A2eE362Df6d1c6020f03164BbE528",
+    operator: "0xC1b7306c94bFAC47f3749dF39a59054A4D47D531",
+    attester: "0x9aebBb9b3dae13c7Ce95961354f0CE540B351B42",
+    treasury: "0x4894E5fc077A2eE362Df6d1c6020f03164BbE528",
+    usdc: "0xAd58b764cc617E4511C6FAFCc949d840706e4303",
+    treecordRoles: "0x2c8Dd1AAED26faA310a8F234bc1Bc15478aD6c5D",
+    treeRegistry: "0x9cd271599C2c3DF6d2489f16eC1c00D74F617B1D",
+    campaignImplementation: "0xa860c2ed19F9d142F7486b83A840fa032A1d24e5",
+    campaignFactory: "0xB963c74a7a1456dd1f37252fBa53eEeF8E18e505",
+    verificationGateway: "0x934a8B3B781de9c2bEC0cc68D775a17a91C88894",
+    carbonLedger: "0x6fFD8F249Ef0e41f0677AC57bc6c4FbFC64407f9",
+  },
 };
 
 /** The deployment for a chain. Throws if Treecord is not deployed there. */

@@ -1,0 +1,11 @@
+node_modules
+coverage
+.env
+.env.*
+!.env.example
+.git
+.github
+.husky
+tests
+docker
+docs
