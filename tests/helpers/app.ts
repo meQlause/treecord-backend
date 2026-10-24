@@ -9,6 +9,7 @@ export const testApp = (overrides: Partial<AppDependencies> = {}): Express =>
     readiness: { database: async () => undefined, chain: async () => undefined },
     logger: createLogger('silent'),
     jsonBodyLimitKb: 64,
+    webOrigin: 'http://127.0.0.1:5173',
     auth: {
       verify: async () => {
         throw new DomainError('invalid_token');

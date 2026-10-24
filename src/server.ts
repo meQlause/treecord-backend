@@ -13,6 +13,7 @@ const server = createApp({
   readiness: { database: () => pingDatabase(database), chain: () => chain.getBlockNumber() },
   logger,
   jsonBodyLimitKb: config.JSON_BODY_LIMIT_KB,
+  webOrigin: config.WEB_ORIGIN,
   auth: authOptions(container.cradle),
   publicRouters: publicRouters(container.cradle),
   privateRouters: privateRouters(container.cradle),

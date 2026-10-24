@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
 import { healthRouter, type ReadinessProbes } from './features/health/health.routes.js';
 import { authenticate, type AuthOptions } from './shared/http/auth.js';
+import { cors } from './shared/http/cors.js';
 import { errorHandler, notFound } from './shared/http/error-handler.js';
 import { requestId } from './shared/http/request-id.js';
 
@@ -10,6 +11,8 @@ export type AppDependencies = {
   readiness: ReadinessProbes;
   logger: Logger;
   jsonBodyLimitKb: number;
+  /** The one browser origin allowed to call the API (be-stack §5). */
+  webOrigin: string;
   auth: AuthOptions;
   /** Feature routers anyone may call, mounted under /api/v1 before authentication (be-architecture §5 row 6). */
   publicRouters: Router[];
@@ -22,6 +25,7 @@ export const createApp = ({
   readiness,
   logger,
   jsonBodyLimitKb,
+  webOrigin,
   auth,
   publicRouters,
   privateRouters,
@@ -29,6 +33,7 @@ export const createApp = ({
   const app = express()
     .use(requestId)
     .use(pinoHttp({ logger, genReqId: (_req, res) => String(res.getHeader('x-request-id')) }))
+    .use(cors(webOrigin))
     .use(express.json({ limit: `${jsonBodyLimitKb}kb` }))
     .use(healthRouter(readiness));
 
