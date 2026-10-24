@@ -64,13 +64,14 @@ jobs:
           docker build -t "$IMAGE:$GITHUB_SHA" .
           docker push "$IMAGE:$GITHUB_SHA"
       - name: Migrate the database
+        # Cloud Run jobs reserve PORT, which the API config the migration reads requires: it is set in the command
         run: |
           gcloud run jobs deploy treecord-migrate \
             --project "$GCP_PROJECT" --region "$GCP_REGION" --image "$IMAGE:$GITHUB_SHA" \
-            --command node_modules/.bin/tsx --args scripts/migrate.ts \
+            --command sh --args="-c,PORT=8080 exec node_modules/.bin/tsx scripts/migrate.ts" \
             --service-account "treecord-api@$GCP_PROJECT.iam.gserviceaccount.com" \
             --set-cloudsql-instances "$SQL_INSTANCE" \
-            --set-env-vars "$COMMON_ENV,PORT=8080,PRIVY_APP_ID=cmvmafmxp01080il0jl4a9x7u,WEB_ORIGIN=$WEB_ORIGIN,PUBLIC_API_URL=$API_URL" \
+            --set-env-vars "$COMMON_ENV,PRIVY_APP_ID=cmvmafmxp01080il0jl4a9x7u,WEB_ORIGIN=$WEB_ORIGIN,PUBLIC_API_URL=$API_URL" \
             --set-secrets "DATABASE_URL=database-url:latest,PRIVY_APP_SECRET=privy-app-secret:latest,ATTESTER_PRIVATE_KEY=attester-private-key:latest,S3_ACCESS_KEY=s3-access-key:latest,S3_SECRET_KEY=s3-secret-key:latest" \
             --max-retries 0 --quiet
           gcloud run jobs execute treecord-migrate --project "$GCP_PROJECT" --region "$GCP_REGION" --wait
