@@ -8,8 +8,15 @@ export type AccountsCradle = { accountsService: ReturnType<typeof createAccounts
 /** be-architecture §6: this feature's registrations. Stateless, so one instance serves every request. */
 export const registerAccounts = (container: AwilixContainer<Cradle>): void => {
   container.register({
-    accountsService: asFunction(({ database, walletOf }: Cradle) =>
-      createAccountsService({ repository: accountsRepository(database), walletOf }),
+    accountsService: asFunction(({ database, walletOf, config }: Cradle) =>
+      createAccountsService({
+        repository: accountsRepository(database),
+        walletOf,
+        faucet:
+          config.FAUCET_ETH_WEI !== undefined && config.FAUCET_USDC_UNITS !== undefined
+            ? { database, ethWei: config.FAUCET_ETH_WEI, usdcUnits: config.FAUCET_USDC_UNITS }
+            : null,
+      }),
     ).singleton(),
   });
 };

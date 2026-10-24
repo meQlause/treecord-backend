@@ -47,7 +47,7 @@ export type PolicyDecision = "needs_review" | "pass" | "reject";
 
 export type RegistryRetirementStatus = "done" | "pending";
 
-export type RelayerJobKind = "anchor_assign" | "attestation" | "claim" | "estimate" | "issue" | "resolve_flag" | "score" | "set_price";
+export type RelayerJobKind = "anchor_assign" | "attestation" | "claim" | "estimate" | "faucet_eth" | "faucet_usdc" | "issue" | "resolve_flag" | "score" | "set_price";
 
 export type RelayerJobStatus = "confirmed" | "failed" | "pending" | "processing" | "sent";
 

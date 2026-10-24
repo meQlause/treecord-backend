@@ -1,5 +1,5 @@
 // One builder per job kind: how to simulate and send its contract call, with the ABI typed per contract.
-import type { Abi, Account, Address, Hex, PublicClient } from 'viem';
+import { parseAbi, type Abi, type Account, type Address, type Hex, type PublicClient } from 'viem';
 import {
   campaignAbi,
   carbonLedgerAbi,
@@ -20,6 +20,7 @@ import {
   setPriceJobPayloadSchema,
   type AttestationJobPayload,
 } from '../../generated/frozen/jobs.js';
+import { faucetJobPayloadSchema } from '../../shared/chain/faucet-jobs.js';
 import type { Wallet } from '../../shared/chain/wallets.js';
 import type { JobKind } from './state.rules.js';
 
@@ -95,7 +96,36 @@ const slotsCall =
     );
   };
 
+// MockUSDC's open mint (contracts/test/mocks/MockUSDC.sol); only the testnet deployments have it
+const mockUsdcAbi = parseAbi(['function mint(address to, uint256 amount)']);
+
+/** `faucet_eth`: a plain transfer from the operator wallet; the simulation is a call with the same value. */
+const faucetEthCall: Builder = (payload) => {
+  const { to, amount } = parsePayload(faucetJobPayloadSchema, 'faucet_eth', payload);
+  const transfer = { to: to as Address, value: BigInt(amount) };
+
+  return {
+    wallet: 'operator',
+    description: `send ${amount} wei to ${to}`,
+    simulate: (client, account) => client.call({ ...transfer, account }),
+    send: (sender, nonce) => sender.sendTransaction({ ...transfer, nonce } as never),
+  };
+};
+
+const faucetUsdcCall: Builder = (payload, deployment) => {
+  const { to, amount } = parsePayload(faucetJobPayloadSchema, 'faucet_usdc', payload);
+
+  return contractCall('operator', `mint(${to}, ${amount}) on USDC`, {
+    address: deployment.usdc,
+    abi: mockUsdcAbi,
+    functionName: 'mint',
+    args: [to as Address, BigInt(amount)],
+  });
+};
+
 const OPERATOR_BUILDERS: Partial<Record<JobKind, Builder>> = {
+  faucet_eth: faucetEthCall,
+  faucet_usdc: faucetUsdcCall,
   claim: slotsCall('claim'),
   anchor_assign: slotsCall('anchor_assign'),
   estimate: (payload, deployment) => {
@@ -155,7 +185,7 @@ const OPERATOR_BUILDERS: Partial<Record<JobKind, Builder>> = {
   },
 };
 
-/** Calls for the operator lane: claim, anchor_assign, estimate, issue, set_price, resolve_flag. */
+/** Calls for the operator lane: claim, anchor_assign, estimate, issue, set_price, resolve_flag, the faucet. */
 export const operatorCall = (
   kind: JobKind,
   payload: unknown,

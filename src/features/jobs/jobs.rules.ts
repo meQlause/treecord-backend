@@ -1,7 +1,7 @@
 import { DomainError } from '../../shared/errors.js';
 
 // Keys the server derives itself (jobs §1.3); a client may not occupy one (R10).
-const DERIVED_PREFIXES = ['score:', 'attestation:', 'resolve_flag:'];
+const DERIVED_PREFIXES = ['score:', 'attestation:', 'resolve_flag:', 'faucet_eth:', 'faucet_usdc:'];
 // 1–200 visible ASCII characters (README §7)
 const CLIENT_KEY = /^[\x21-\x7e]{1,200}$/;
 

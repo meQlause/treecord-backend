@@ -1,7 +1,8 @@
 // Processes relayer_jobs in three lanes that run side by side:
 // - score:       the evidence scoring pipeline (AI call, policy, attestation signing). No transaction.
 // - attestation: VerificationGateway.submit, batched up to 10 per transaction, sent by the relayer wallet.
-// - operator:    claim, anchor_assign, estimate, issue, set_price and resolve_flag, sent by the operator wallet.
+// - operator:    claim, anchor_assign, estimate, issue, set_price, resolve_flag and the testnet faucet, sent by the
+//                operator wallet.
 import type { TreecordDeployment } from '../../generated/frozen/addresses.js';
 import {
   attestationJobPayloadSchema,
@@ -32,6 +33,8 @@ const OPERATOR_KINDS: JobKind[] = [
   'issue',
   'set_price',
   'resolve_flag',
+  'faucet_eth',
+  'faucet_usdc',
 ];
 
 /** Re-sign an attestation this close to its expiry instead of sending one that may land too late. */
