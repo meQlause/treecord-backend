@@ -76,21 +76,27 @@ export class AutoFunder {
   private async fill(campaign: Address): Promise<void> {
     const { clients, deployment, log } = this.options;
     const operator = clients.operator.account.address;
-    const read = (
-      address: Address,
-      abi: typeof campaignAbi | typeof erc20Abi,
-      functionName: string,
-      args: unknown[] = [],
-    ) =>
-      clients.public.readContract({ address, abi, functionName, args } as never) as Promise<bigint>;
-    const [target, raised, balance, allowance] = await Promise.all([
-      read(campaign, campaignAbi, 'fundingTarget'),
-      read(campaign, campaignAbi, 'totalRaised'),
-      read(deployment.usdc, erc20Abi, 'balanceOf', [operator]),
-      read(deployment.usdc, erc20Abi, 'allowance', [operator, campaign]),
+    const chain = clients.public;
+    // the target lives in the campaign's config struct; totalRaised is its own getter
+    const [config, raised, balance, allowance] = await Promise.all([
+      chain.readContract({ address: campaign, abi: campaignAbi, functionName: 'config' }),
+      chain.readContract({ address: campaign, abi: campaignAbi, functionName: 'totalRaised' }),
+      chain.readContract({
+        address: deployment.usdc,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [operator],
+      }),
+      chain.readContract({
+        address: deployment.usdc,
+        abi: erc20Abi,
+        functionName: 'allowance',
+        args: [operator, campaign],
+      }),
     ]);
+    const remaining = config.fundingTarget - raised;
 
-    for (const step of fundingSteps({ remaining: target - raised, balance, allowance })) {
+    for (const step of fundingSteps({ remaining, balance, allowance })) {
       const hash = await this.send(this.callFor(campaign, step));
 
       log.info(
