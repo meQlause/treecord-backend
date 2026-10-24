@@ -144,8 +144,17 @@ const workerConfigSchema = z
     INDEXER_START_BLOCK: count.optional(),
     RELAYER_POLL_MS: positiveInt.default(WORKER_DEFAULTS.relayerPollMs),
     SCHEDULER_INTERVAL_MS: positiveInt.default(WORKER_DEFAULTS.schedulerIntervalMs),
+    // testnet only: the operator wallet fills every campaign still funding, so it turns active without a donor
+    AUTO_FUND: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
   })
   .superRefine((env, context) => {
+    if (env.AUTO_FUND && !FAUCET_CHAINS.includes(env.CHAIN_ID)) {
+      context.addIssue({ code: 'custom', path: ['AUTO_FUND'], message: 'runs on a testnet only' });
+    }
+
     if (env.MOCK_AI) {
       return;
     }

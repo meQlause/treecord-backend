@@ -52,6 +52,7 @@ const build = (config: WorkerConfig, log: Logger) => {
       indexerPollMs: config.INDEXER_POLL_MS,
       relayerPollMs: config.RELAYER_POLL_MS,
       schedulerIntervalMs: config.SCHEDULER_INTERVAL_MS,
+      autoFund: config.AUTO_FUND,
       indexer: {
         chunkBlocks: config.INDEXER_CHUNK_BLOCKS,
         confirmations: config.INDEXER_CONFIRMATIONS,
