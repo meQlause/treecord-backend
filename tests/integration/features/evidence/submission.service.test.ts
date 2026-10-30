@@ -89,7 +89,7 @@ describe('POST /api/v1/evidence/:submissionId/submit, failing prechecks', () => 
     const submissionId = await phone.record(CHECK_IN_TARGET, video);
     const response = await submit(
       submissionId,
-      await phone.sign(checkInPayload(video, { acc: 41 })),
+      await phone.sign(checkInPayload(video, { acc: 341 })),
     );
     const [stored] = (
       await sql<{

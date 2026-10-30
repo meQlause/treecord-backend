@@ -122,7 +122,7 @@ const UPLOADS = {
       pipeline: { step: 2, failedAt: 'prechecks' },
       rejection: {
         stage: 'precheck',
-        reasons: [{ reason: 'gps_inaccurate', value: '41.0 m' }],
+        reasons: [{ reason: 'gps_inaccurate', value: '341.0 m' }],
         note: null,
       },
     }),
