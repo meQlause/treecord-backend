@@ -150,7 +150,7 @@ const startWorker = ({
 } => {
   const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
   const db = createWorkerDatabase({
-    url: test.postgres.getConnectionUri(),
+    url: test.url,
     poolMax: 5,
     onConnectionError: () => undefined,
   });

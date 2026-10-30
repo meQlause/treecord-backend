@@ -23,6 +23,20 @@ export default defineConfig({
     },
   ],
   test: {
+    // a cap on parallel files: unbounded, a 12-core machine ran 11 jsdom-free but container-heavy workers at once
+    maxWorkers: 4,
+    projects: [
+      { extends: true, test: { name: 'unit', include: ['tests/unit/**/*.test.ts'] } },
+      {
+        extends: true,
+        test: {
+          name: 'integration',
+          include: ['tests/integration/**/*.test.ts', 'tests/regression/**/*.test.ts'],
+          // one PostgreSQL container for the whole run (tests/helpers/postgres.global.ts)
+          globalSetup: ['tests/helpers/postgres.global.ts'],
+        },
+      },
+    ],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
