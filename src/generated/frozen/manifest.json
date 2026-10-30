@@ -67,7 +67,7 @@
     },
     "src/generated/frozen/addresses.ts": {
       "source": "packages/shared/src/addresses.ts",
-      "sha256": "9812f9d6468bac64cab855ca7106b8b419b465f907193ebc8ed2cd43736c82ec"
+      "sha256": "4e4b575fc026cde9c7179c10f3df2a9218bb4b31bf1fddd01164c7f9f4400259"
     },
     "src/generated/frozen/ai.ts": {
       "source": "packages/shared/src/ai.ts",
