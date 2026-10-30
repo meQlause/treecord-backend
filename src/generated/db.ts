@@ -216,6 +216,18 @@ export interface ChainCursor {
   updated_at: Generated<Timestamp>;
 }
 
+export interface ChainlinkEnforcements {
+  block_number: Int8;
+  block_time: Timestamp;
+  campaign_address: string;
+  id: Generated<string>;
+  kind: string;
+  log_index: number;
+  milestone: number | null;
+  tree_id: Int8;
+  tx_hash: string;
+}
+
 export interface Challenges {
   audit_session_id: string | null;
   code: string;
@@ -519,6 +531,7 @@ export interface DB {
   carbon_purchases: CarbonPurchases;
   carbon_reservations: CarbonReservations;
   chain_cursor: ChainCursor;
+  chainlink_enforcements: ChainlinkEnforcements;
   challenges: Challenges;
   contributions: Contributions;
   devices: Devices;

@@ -62,6 +62,7 @@ const TREE_3001 = {
   plantedAt: '2026-04-18T05:00:00.000Z',
   replantDeadline: null,
   tag: 'TC-K7QM-3XRA',
+  enforcedByChainlink: false,
   currentMilestone: 2,
   milestones: [
     window(0, 'paid', ['2026-04-18T05:00:00.000Z', '2026-05-18T05:00:00.000Z']),
@@ -335,5 +336,32 @@ describe('the planter lists refuse', () => {
 
     expect(response.status).toBe(status);
     expect(response.body.error.code).toBe(code);
+  });
+});
+
+describe('GET /api/v1/planter/trees — FR-244 a forfeit the Chainlink keeper enforced', () => {
+  const KEEPER_TX = `0x${'e7'.repeat(32)}`;
+
+  it('marks only the tree whose forfeit the keeper sent', async () => {
+    await sql`
+      insert into public.milestone_forfeits (campaign_address, tree_id, milestone, amount, block_number, block_time,
+        tx_hash, log_index)
+      values (${ROOTS}, 3100, 5, '4200000', 29000000, now(), ${KEEPER_TX}, 0)`.execute(
+      test.database,
+    );
+    await sql`
+      insert into public.chainlink_enforcements (kind, campaign_address, tree_id, milestone, block_number,
+        block_time, tx_hash, log_index)
+      values ('forfeit', ${ROOTS}, 3100, 5, 29000000, now(), ${KEEPER_TX}, 1)`.execute(
+      test.database,
+    );
+
+    const { items } = (await get('/trees?limit=100')).body as {
+      items: { treeId: string; enforcedByChainlink: boolean }[];
+    };
+
+    expect(items.filter((item) => item.enforcedByChainlink).map((item) => item.treeId)).toEqual([
+      '3100',
+    ]);
   });
 });

@@ -24,6 +24,8 @@ export type IndexerOptions = {
   confirmations?: number;
   /** Already indexed blocks scanned again every cycle, to pick up reorged logs. */
   rescanBlocks?: number;
+  /** The Chainlink keeper whose Enforced events are mirrored (FR-243); none when unset. */
+  keeperAddress?: Address;
 };
 
 export type TickResult = IndexRange & {
@@ -85,6 +87,7 @@ export class Indexer {
       treeRegistry: lower(deployment.treeRegistry),
       gateway: lower(deployment.verificationGateway),
       carbonLedger: lower(deployment.carbonLedger),
+      keeper: options.keeperAddress === undefined ? null : lower(options.keeperAddress),
       campaigns: new Set(),
     };
   }
@@ -172,6 +175,7 @@ export class Indexer {
       this.watched.treeRegistry,
       this.watched.gateway,
       this.watched.carbonLedger,
+      ...(this.watched.keeper === null ? [] : [this.watched.keeper]),
       ...this.watched.campaigns,
     ];
     const events = decodeLogs(await this.getLogs(addresses, range), this.watched);

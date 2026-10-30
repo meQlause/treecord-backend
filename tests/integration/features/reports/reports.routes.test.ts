@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testApi, type TestApi } from '../../../helpers/api.js';
@@ -68,6 +69,7 @@ const ROOTS_REPORT = {
     paidAmount: '2100000000',
     paidBps: 1666,
     forfeitedAmount: '68000000',
+    chainlinkEnforced: 0,
     byMilestone: [
       { milestone: 0, month: 0, payouts: 984, amount: '1033200000' },
       { milestone: 1, month: 3, payouts: 984, amount: '1033200000' },
@@ -180,5 +182,27 @@ describe('the report refuses', () => {
 
     expect(response.status).toBe(status);
     expect(response.body.error.code).toBe(code);
+  });
+});
+
+describe('GET /api/v1/reports/campaign/:address — FR-244 forfeits the Chainlink keeper enforced', () => {
+  it('counts only the forfeits whose transaction the keeper sent', async () => {
+    // three of the 34 month-6 forfeits (trees 3951–3984) credited to the keeper in their own transaction
+    await sql`
+      insert into public.chainlink_enforcements (kind, campaign_address, tree_id, milestone, block_number,
+        block_time, tx_hash, log_index)
+      select 'forfeit', f.campaign_address, f.tree_id, f.milestone, f.block_number, f.block_time, f.tx_hash,
+        100 + f.tree_id::integer
+      from public.milestone_forfeits f
+      where f.campaign_address = ${ROOTS} and f.tree_id in (3951, 3952, 3953)`.execute(
+      test.database,
+    );
+
+    const response = await get(ROOTS);
+
+    expect(response.body.report.incentives).toMatchObject({
+      forfeitedAmount: '68000000',
+      chainlinkEnforced: 3,
+    });
   });
 });

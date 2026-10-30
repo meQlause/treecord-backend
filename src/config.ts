@@ -142,6 +142,11 @@ const workerConfigSchema = z
     INDEXER_RESCAN_BLOCKS: count.default(WORKER_DEFAULTS.indexerRescanBlocks),
     // overrides the deploy block from the frozen addresses, for example to skip history
     INDEXER_START_BLOCK: count.optional(),
+    // FR-243, ADR-022: the Chainlink keeper whose Enforced events are mirrored; unset, keeper logs are ignored
+    CHAINLINK_KEEPER_ADDRESS: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{40}$/, 'a 0x-prefixed 20-byte address')
+      .optional(),
     RELAYER_POLL_MS: positiveInt.default(WORKER_DEFAULTS.relayerPollMs),
     SCHEDULER_INTERVAL_MS: positiveInt.default(WORKER_DEFAULTS.schedulerIntervalMs),
     // testnet only: the operator wallet fills every campaign still funding, so it turns active without a donor
@@ -173,7 +178,7 @@ const workerConfigSchema = z
 export type WorkerConfig = z.infer<typeof workerConfigSchema>;
 
 /** NFR-008: parses the worker's environment once; throws naming every missing or malformed variable. */
-const loadWorkerConfig = (env: Record<string, string | undefined>): WorkerConfig => {
+export const loadWorkerConfig = (env: Record<string, string | undefined>): WorkerConfig => {
   const parsed = workerConfigSchema.safeParse(env);
 
   if (parsed.success) {

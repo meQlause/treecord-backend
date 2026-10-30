@@ -18,7 +18,11 @@ export type Location = {
 const monthOf = (milestone: number): number => MILESTONE_DUE_UNITS[milestone] ?? 0;
 
 /** trees §1 `tree`. */
-export const toTree = (tree: TreeRow, location: Location) => ({
+export const toTree = (
+  tree: TreeRow,
+  location: Location,
+  removalEnforcedTxHash: string | null,
+) => ({
   treeId: tree.tree_id,
   status: tree.status,
   campaign: {
@@ -35,6 +39,7 @@ export const toTree = (tree: TreeRow, location: Location) => ({
   location,
   tag: tree.tag,
   replantDeadline: tree.replant_deadline?.toISOString() ?? null,
+  removalEnforcedTxHash,
 });
 
 /** FR-054: one entry per chain event; `thumbnails` holds each entry's presigned first keyframe, or null. */
@@ -81,6 +86,9 @@ export const toMilestones = (tree: TreeRow, records: TreeRecords, now: Date) => 
       closesAt: window.closesAt,
       now: now.getTime(),
     }),
+    enforcedTxHash:
+      records.forfeits.find((row) => row.milestone === window.milestone && row.enforced)?.tx_hash ??
+      null,
   }));
 };
 

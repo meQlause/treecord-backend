@@ -45,6 +45,8 @@ export type TreeContext = {
   wallet: string;
   chainTime: number;
   settled: Settled;
+  /** FR-244: one of its forfeits (or its removal) was sent by the Chainlink keeper. */
+  enforced: boolean;
   live: LiveRow[];
   challenge: { id: string; code: string; expires_at: Date } | undefined;
 };
@@ -116,6 +118,7 @@ export const toTreeItem = (tree: TreeRow, context: TreeContext) => {
     plantedAt: tree.planted_at.toISOString(),
     replantDeadline: tree.replant_deadline?.toISOString() ?? null,
     tag: tree.tag,
+    enforcedByChainlink: context.enforced,
     currentMilestone: currentMilestone(context.settled),
     milestones: milestoneStates(timing, context.settled, context.chainTime).map((window) => ({
       milestone: window.milestone,

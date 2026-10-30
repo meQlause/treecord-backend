@@ -3,7 +3,7 @@
 // in `all` or `relayer` mode per operator and relayer wallet.
 import { hostname } from 'node:os';
 import { pino } from 'pino';
-import type { Hex } from 'viem';
+import type { Address, Hex } from 'viem';
 import { readWorkerConfig, type WorkerConfig } from './config.js';
 import { getDeployment } from './generated/frozen/addresses.js';
 import { Attester } from './generated/frozen/attester.js';
@@ -60,6 +60,9 @@ const build = (config: WorkerConfig, log: Logger) => {
         ...(config.INDEXER_START_BLOCK === undefined
           ? {}
           : { startBlock: BigInt(config.INDEXER_START_BLOCK) }),
+        ...(config.CHAINLINK_KEEPER_ADDRESS === undefined
+          ? {}
+          : { keeperAddress: config.CHAINLINK_KEEPER_ADDRESS as Address }),
       },
     },
   });

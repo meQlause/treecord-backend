@@ -90,20 +90,22 @@ export const createTreesService = ({ repository, storage, chainNow }: TreesDepen
         throw new DomainError('not_found');
       }
 
-      const [now, location, timeline, payouts, forfeits, flags, viewer] = await Promise.all([
-        chainNow(),
-        locate(tree, caller),
-        repository.timeline(treeId),
-        repository.payouts(treeId),
-        repository.forfeits(treeId),
-        repository.flags(treeId),
-        caller === undefined ? null : viewerOf(tree, caller),
-      ]);
+      const [now, location, timeline, payouts, forfeits, flags, viewer, removalEnforced] =
+        await Promise.all([
+          chainNow(),
+          locate(tree, caller),
+          repository.timeline(treeId),
+          repository.payouts(treeId),
+          repository.forfeits(treeId),
+          repository.flags(treeId),
+          caller === undefined ? null : viewerOf(tree, caller),
+          repository.removalEnforcement(treeId),
+        ]);
       const records = { timeline, payouts, forfeits, flags };
       const thumbnails = await thumbnailsOf(storage, timeline);
 
       return {
-        tree: toTree(tree, location),
+        tree: toTree(tree, location, removalEnforced),
         timeline: toTimeline(timeline, thumbnails),
         milestones: toMilestones(tree, records, now),
         ...toRecords(tree, records),

@@ -134,10 +134,16 @@ const treeFigureReads = (database: Kysely<DB>) => ({
         .select([sql<string>`tree_id::text`.as('tree_id'), 'milestone'])
         .where('tree_id', 'in', treeIds)
         .execute(),
+      // `enforced`: the Chainlink keeper sent it (FR-244); `exists` so a multi-task keeper transaction adds no rows
       database
-        .selectFrom('milestone_forfeits')
-        .select([sql<string>`tree_id::text`.as('tree_id'), 'milestone'])
-        .where('tree_id', 'in', treeIds)
+        .selectFrom('milestone_forfeits as f')
+        .select([
+          sql<string>`f.tree_id::text`.as('tree_id'),
+          'f.milestone',
+          sql<boolean>`exists (select 1 from public.chainlink_enforcements ce
+            where ce.tree_id = f.tree_id and ce.tx_hash = f.tx_hash)`.as('enforced'),
+        ])
+        .where('f.tree_id', 'in', treeIds)
         .execute(),
     ]),
 

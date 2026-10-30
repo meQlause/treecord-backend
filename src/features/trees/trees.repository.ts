@@ -69,13 +69,33 @@ const recordReads = (database: Kysely<DB>) => ({
       .orderBy('milestone')
       .execute(),
 
+  /** `enforced`: the Chainlink keeper sent this forfeit (FR-244). `exists`, not a join: one keeper transaction can
+   *  settle several milestones of a tree, and a join would repeat the row. */
   forfeits: (treeId: string) =>
     database
-      .selectFrom('milestone_forfeits')
-      .select(['milestone', 'amount', 'block_time', 'tx_hash'])
-      .where('tree_id', '=', treeId)
-      .orderBy('milestone')
+      .selectFrom('milestone_forfeits as f')
+      .select([
+        'f.milestone',
+        'f.amount',
+        'f.block_time',
+        'f.tx_hash',
+        sql<boolean>`exists (select 1 from public.chainlink_enforcements ce
+          where ce.tree_id = f.tree_id and ce.tx_hash = f.tx_hash)`.as('enforced'),
+      ])
+      .where('f.tree_id', '=', treeId)
+      .orderBy('f.milestone')
       .execute(),
+
+  /** FR-244: the keeper's expire of this tree, if it sent one. */
+  removalEnforcement: async (treeId: string): Promise<string | null> =>
+    (
+      await database
+        .selectFrom('chainlink_enforcements')
+        .select('tx_hash')
+        .where('tree_id', '=', treeId)
+        .where('kind', '=', 'expire')
+        .executeTakeFirst()
+    )?.tx_hash ?? null,
 
   /** FR-058: every flag past pending, oldest first. Pending flags are never public. */
   flags: (treeId: string) =>

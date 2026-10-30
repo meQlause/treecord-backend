@@ -13,6 +13,7 @@ import { onAttestationAccepted } from './attestation-events.repository.js';
 import { applyCampaignEvent, onCampaignCreated } from './campaign-events.repository.js';
 import { applyCarbonEvent } from './carbon-events.repository.js';
 import type { IndexedEvent } from './decode.rules.js';
+import { onEnforced } from './keeper-events.repository.js';
 import { applyTreeEvent } from './tree-events.repository.js';
 
 export type ApplyContext = {
@@ -24,6 +25,15 @@ export type ApplyContext = {
   /** ISO timestamp of a block. Cached by the caller. */
   blockTime: (blockNumber: bigint) => Promise<string>;
   log: Logger;
+};
+
+const applyGatewayEvent = async (
+  context: ApplyContext,
+  indexed: Extract<IndexedEvent, { source: 'gateway' }>,
+): Promise<void> => {
+  if (indexed.event.eventName === 'AttestationAccepted') {
+    await onAttestationAccepted(context, indexed.meta, indexed.event.args.nonce);
+  }
 };
 
 export const applyEvent = async (context: ApplyContext, indexed: IndexedEvent): Promise<void> => {
@@ -39,12 +49,11 @@ export const applyEvent = async (context: ApplyContext, indexed: IndexedEvent): 
     case 'treeRegistry':
       return applyTreeEvent(context, indexed.meta, indexed.event);
     case 'gateway':
-      if (indexed.event.eventName === 'AttestationAccepted') {
-        await onAttestationAccepted(context, indexed.meta, indexed.event.args.nonce);
-      }
-
-      return;
+      return applyGatewayEvent(context, indexed);
     case 'carbonLedger':
       return applyCarbonEvent(context, indexed.meta, indexed.event);
+    case 'keeper':
+      // Enforced is the keeper ABI's only event (shared/chain/keeper-abi.ts)
+      return onEnforced(context, indexed.meta, indexed.event.args);
   }
 };

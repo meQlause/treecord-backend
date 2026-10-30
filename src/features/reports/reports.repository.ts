@@ -82,14 +82,17 @@ const moneyReads = (database: Kysely<DB>) => ({
       .groupBy('milestone')
       .execute(),
 
-  forfeited: async (address: string): Promise<string> =>
-    (
-      await database
-        .selectFrom('milestone_forfeits')
-        .select(SUM_AMOUNT.as('total'))
-        .where('campaign_address', '=', address)
-        .executeTakeFirstOrThrow()
-    ).total,
+  /** `enforced`: how many the Chainlink keeper sent (FR-244), matched on (tree_id, tx_hash). */
+  forfeited: (address: string): Promise<{ total: string; enforced: number }> =>
+    database
+      .selectFrom('milestone_forfeits as f')
+      .select([
+        sql<string>`coalesce(sum(f.amount), 0)::text`.as('total'),
+        sql<number>`count(*) filter (where exists (select 1 from public.chainlink_enforcements ce
+          where ce.tree_id = f.tree_id and ce.tx_hash = f.tx_hash))::int`.as('enforced'),
+      ])
+      .where('f.campaign_address', '=', address)
+      .executeTakeFirstOrThrow(),
 
   /** FR-068: registry issuances, newest first, and the units retired from them. */
   batches: (address: string) =>
@@ -185,7 +188,7 @@ export type ReportRecords = {
   trees: Rows<'trees'>;
   funding: Rows<'funding'>;
   payoutsByMilestone: Rows<'payoutsByMilestone'>;
-  forfeited: string;
+  forfeited: { total: string; enforced: number };
   batches: Rows<'batches'>;
   retired: string;
 };

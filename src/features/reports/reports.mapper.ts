@@ -32,7 +32,8 @@ const toIncentives = (campaign: CampaignHeaderRow, records: ReportRecords) => {
     incentivePool: campaign.incentive_pool,
     paidAmount,
     paidBps: ratioBps(paidAmount, campaign.incentive_pool),
-    forfeitedAmount: records.forfeited,
+    forfeitedAmount: records.forfeited.total,
+    chainlinkEnforced: records.forfeited.enforced,
     byMilestone,
   };
 };

@@ -45,10 +45,13 @@ describe('migrations — ADR-019, data-spec §5.2 and §6.2', () => {
       const results = await migrateToLatest(database, 'migrations');
 
       expect(results.map(({ migrationName, status }) => [migrationName, status])).toEqual(
-        ['000_bootstrap', ...FROZEN, '200_rewrite_additions', '201_faucet_jobs'].map((name) => [
-          name,
-          'Success',
-        ]),
+        [
+          '000_bootstrap',
+          ...FROZEN,
+          '200_rewrite_additions',
+          '201_faucet_jobs',
+          '202_chainlink_enforcements',
+        ].map((name) => [name, 'Success']),
       );
     },
     CONTAINER_START_MS,

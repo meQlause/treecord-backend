@@ -77,6 +77,7 @@ const EXAMPLE_3001 = {
     location: { precision: 'geohash', lat: -7.431564, lon: 109.24736, geohash: 'qqtttzp' },
     tag: 'TC-K7QM-3XRA',
     replantDeadline: null,
+    removalEnforcedTxHash: null,
   },
   timeline: [
     {
@@ -112,6 +113,7 @@ const EXAMPLE_3001 = {
     ...window,
     amount: AMOUNTS[index],
     status: ['paid', 'paid', 'open', 'upcoming', 'upcoming', 'upcoming'][index],
+    enforcedTxHash: null,
   })),
   payouts: [
     {
@@ -267,5 +269,40 @@ describe('GET /api/v1/trees/:treeId signed in', () => {
 
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('invalid_token');
+  });
+});
+
+describe('GET /api/v1/trees/:treeId — FR-244 a removal the Chainlink keeper enforced', () => {
+  const EXPIRE_TX = `0x${'e7'.repeat(32)}`;
+
+  it('credits the removal and every forfeit of its transaction to Chainlink', async () => {
+    await sql`update public.trees set status = 'removed' where tree_id = 3104`.execute(
+      test.database,
+    );
+    await sql`
+      insert into public.milestone_forfeits (campaign_address, tree_id, milestone, amount, block_number, block_time,
+        tx_hash, log_index)
+      select ${ROOTS}, 3104, m, '1050000', 29000000, now(), ${EXPIRE_TX}, m
+      from generate_series(0, 5) m`.execute(test.database);
+    await sql`
+      insert into public.chainlink_enforcements (kind, campaign_address, tree_id, milestone, block_number,
+        block_time, tx_hash, log_index)
+      values ('expire', ${ROOTS}, 3104, null, 29000000, now(), ${EXPIRE_TX}, 9)`.execute(
+      test.database,
+    );
+
+    const response = await getTree('3104');
+    const milestones = response.body.milestones as {
+      status: string;
+      enforcedTxHash: string | null;
+    }[];
+
+    expect(response.body.tree.removalEnforcedTxHash).toBe(EXPIRE_TX);
+    // tree 3104 was never paid, so the expire forfeited all six milestones in its one transaction
+    expect(milestones).toEqual(
+      Array.from({ length: 6 }, () =>
+        expect.objectContaining({ status: 'forfeited', enforcedTxHash: EXPIRE_TX }),
+      ),
+    );
   });
 });

@@ -18,7 +18,7 @@ type WorkerTuning = {
   schedulerIntervalMs: number;
   indexer?: Pick<
     IndexerOptions,
-    'cursorName' | 'startBlock' | 'chunkBlocks' | 'confirmations' | 'rescanBlocks'
+    'cursorName' | 'startBlock' | 'chunkBlocks' | 'confirmations' | 'rescanBlocks' | 'keeperAddress'
   >;
   receiptTimeoutMs?: number;
   maxCallsPerRun?: number;

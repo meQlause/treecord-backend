@@ -13,9 +13,10 @@ import {
   treeRegistryAbi,
   verificationGatewayAbi,
 } from '../../generated/frozen/abis/index.js';
+import { treecordKeeperAbi } from '../../shared/chain/keeper-abi.js';
 
 /** Which contract a log came from. Campaign clones are discovered from CampaignCreated. */
-type LogSource = 'factory' | 'campaign' | 'treeRegistry' | 'gateway' | 'carbonLedger';
+type LogSource = 'factory' | 'campaign' | 'treeRegistry' | 'gateway' | 'carbonLedger' | 'keeper';
 
 /** The fields of an eth_getLogs entry the indexer needs. */
 export type RawLog = {
@@ -57,6 +58,11 @@ export type IndexedEvent =
       source: 'carbonLedger';
       meta: EventMeta;
       event: DecodeEventLogReturnType<typeof carbonLedgerAbi>;
+    }
+  | {
+      source: 'keeper';
+      meta: EventMeta;
+      event: DecodeEventLogReturnType<typeof treecordKeeperAbi>;
     };
 
 /** Contract addresses the indexer watches, all lowercase. */
@@ -65,6 +71,8 @@ export type WatchedAddresses = {
   treeRegistry: Address;
   gateway: Address;
   carbonLedger: Address;
+  /** The Chainlink keeper (FR-243); null when CHAINLINK_KEEPER_ADDRESS is unset. */
+  keeper: Address | null;
   campaigns: Set<Address>;
 };
 
@@ -74,6 +82,7 @@ const ABIS = {
   treeRegistry: treeRegistryAbi,
   gateway: verificationGatewayAbi,
   carbonLedger: carbonLedgerAbi,
+  keeper: treecordKeeperAbi,
 } as const;
 
 export const lower = <Value extends string>(value: Value): Value => value.toLowerCase() as Value;
@@ -85,6 +94,7 @@ const sourceOf = (address: Address, watched: WatchedAddresses): LogSource | null
     [watched.treeRegistry, 'treeRegistry'],
     [watched.gateway, 'gateway'],
     [watched.carbonLedger, 'carbonLedger'],
+    ...(watched.keeper === null ? [] : [[watched.keeper, 'keeper'] as [Address, LogSource]]),
   ];
   const match = fixed.find(([watchedAddress]) => watchedAddress === lowered);
 

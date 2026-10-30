@@ -141,6 +141,7 @@ const contextsOf = async (
           paid: rowsOf(payouts, id).map((row) => row.milestone),
           forfeited: rowsOf(forfeits, id).map((row) => row.milestone),
         },
+        enforced: rowsOf(forfeits, id).some((row) => row.enforced),
         live: rowsOf(live, id) as LiveRow[],
         challenge: rowsOf(challenges, id)[0],
       },
