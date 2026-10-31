@@ -1,0 +1,29 @@
+name: cre-keeper
+
+# The Chainlink keeper branch only: the same checks as ci-cd's verify, and no deploy. ci-cd runs on master alone,
+# so pushing this branch never touches Cloud Run.
+on:
+  push:
+    branches: [feat/cre-keeper]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm check
+      - run: pnpm check:parity
+      - run: pnpm check:frozen
+      - run: pnpm vitest run tests/unit
